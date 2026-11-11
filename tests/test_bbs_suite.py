@@ -117,8 +117,19 @@ def test_synthetic_cad_pdf_end_to_end() -> None:
     xlsx_bytes = export_bbs_xlsx(doc)
     wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=False)
     ws = wb["FORMAT"]
+    assert ws["S2"].value == 50.0  # Footing Cover constant cell
+    assert ws["W3"].value == 162.0  # Unit Wt divisor constant cell
+    assert ws["Y3"].value == 1000.0  # Kg/MT scale constant cell
+    assert ws["Z8"].value == 650.0  # Footing Depth parameter cell
+    assert ws["L8"].value == "=AC8*AD8"
     assert ws["M8"].value == "=+L8*K8"
-    assert ws["N8"].value == "=550+2600+550-(2*12)"
+    assert ws["N8"].value == "=(Z8-2*$S$2)+(D8-2*$S$2)+(Z8-2*$S$2)-(2*E8)"
+    assert ws["P8"].value == "=IF($E8=P$6,$M8,0)*($N8*$E8*$E8/($W$3*$Y$3))"
+
+    # Mutating a global constant must recalculate dependent UI/model values with zero rounding
+    doc.settings.footing_cover_mm = 40.0
+    updated_doc = recalculate_document(doc)
+    assert updated_doc.rows[0].cut_length_mm == 3736.0  # (650-80)+(2700-80)+(650-80)-24
 
     # Verify DrawingML XML integrity
     with zipfile.ZipFile(io.BytesIO(xlsx_bytes), "r") as z:
@@ -211,8 +222,9 @@ def test_real_shivam_heights_regression() -> None:
     assert stats["cf_counts"] == {"CF1": 1, "CF2": 1, "CF3": 2, "CF4": 6, "CF5": 2}
 
     doc = build_bbs_document(meta, sched, settings, warnings, stats)
-    assert doc.totals_by_dia_mt[8] == pytest.approx(4.000954, abs=1e-5)
-    assert doc.totals_by_dia_mt[16] == pytest.approx(1.137778, abs=1e-5)
+    assert doc.totals_by_dia_mt[8] == pytest.approx(4.001529679, abs=1e-6)
+    assert doc.totals_by_dia_mt[16] == pytest.approx(1.137777778, abs=1e-6)
+    assert doc.total_weight_mt == pytest.approx(32.165540827, abs=1e-6)
 
     xlsx_bytes = export_bbs_xlsx(doc)
     with zipfile.ZipFile(io.BytesIO(xlsx_bytes), "r") as z:

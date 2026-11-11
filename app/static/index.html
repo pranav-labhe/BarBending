@@ -644,6 +644,110 @@
     }
     .del-btn:hover:not(:disabled) { background: var(--danger-soft); border-color: transparent; }
     .empty-filter { text-align: center; padding: 26px 14px; color: var(--muted); }
+    .const-drawer {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+    .const-drawer summary {
+      cursor: pointer;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--primary);
+      user-select: none;
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .const-drawer summary::-webkit-details-marker { display: none; }
+    .const-drawer .settings-bar { margin-top: 10px; }
+    .cell-fx { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+    .fx-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1px 5px;
+      min-width: 22px;
+      height: 18px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      font-style: italic;
+      font-weight: 700;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--surface-subtle);
+      color: var(--primary);
+      box-shadow: none;
+      flex-shrink: 0;
+      opacity: 0.72;
+    }
+    .fx-btn:hover, .fx-btn:focus-visible, .fx-btn.active {
+      opacity: 1;
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .fx-btn.manual { color: var(--muted); font-style: normal; opacity: 0.55; }
+    table:not(.show-params) .col-param { display: none; }
+    .col-param { background: rgba(37, 99, 235, 0.03); }
+    .formula-popover {
+      position: fixed;
+      z-index: 85;
+      width: min(440px, calc(100vw - 24px));
+      background: var(--surface-elevated);
+      color: var(--ink);
+      border: 1px solid var(--border-strong);
+      border-top: 3px solid var(--primary);
+      border-radius: var(--radius-md);
+      padding: 11px 13px;
+      box-shadow: 0 18px 40px -12px rgba(15, 23, 42, 0.35), 0 2px 6px rgba(15, 23, 42, 0.14);
+      font-size: 12px;
+      pointer-events: auto;
+    }
+    .fp-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .fp-title { font-weight: 700; font-size: 12.5px; color: var(--ink); }
+    .fp-cell-tag {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .fp-row { margin-bottom: 7px; }
+    .fp-row:last-child { margin-bottom: 0; }
+    .fp-lbl {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .fp-code {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+    .fp-result { font-weight: 700; color: var(--export); }
+    .fp-meta { font-size: 11px; color: var(--muted); line-height: 1.4; }
     .hidden { display: none !important; }
 
     @media (max-width: 1120px) {
@@ -776,32 +880,86 @@
           <input type="text" id="metaStructure" />
         </div>
         <div class="field">
-          <label for="setFootCov">Footing Cover (mm)</label>
-          <input type="number" id="setFootCov" />
+          <label for="setFootCov">Foot Cover ($S$2 mm)</label>
+          <input type="number" step="any" id="setFootCov" class="const-input" />
         </div>
         <div class="field">
-          <label for="setColCov">Col Cover (mm)</label>
-          <input type="number" id="setColCov" />
+          <label for="setColCov">Col Cover ($U$2 mm)</label>
+          <input type="number" step="any" id="setColCov" class="const-input" />
         </div>
         <div class="field">
-          <label for="setColHt">Col Height (mm)</label>
-          <input type="number" id="setColHt" />
+          <label for="setColHt">Col Height ($W$2 mm)</label>
+          <input type="number" step="any" id="setColHt" class="const-input" />
         </div>
         <div class="field">
           <label for="setMode">Rule Mode</label>
-          <select id="setMode">
+          <select id="setMode" class="const-input">
             <option value="sample_compat">Sample-Compatible</option>
             <option value="strict_geometry">Strict Geometry</option>
           </select>
         </div>
         <div class="field">
           <label for="setRoundUp">Round Up</label>
-          <select id="setRoundUp">
-            <option value="false">Exact</option>
+          <select id="setRoundUp" class="const-input">
+            <option value="false">Exact (No Roundoff)</option>
             <option value="true">ROUNDUP</option>
           </select>
         </div>
       </div>
+
+      <details class="const-drawer">
+        <summary>▸ All Sheet Constants ($P$3, $O$4, $Q$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
+        <div class="settings-bar">
+          <div class="field">
+            <label for="setLdVert">Vert. Ld ($Y$2 mm)</label>
+            <input type="number" step="any" id="setLdVert" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setHookMult">Hook Mult ($S$3 ×D)</label>
+            <input type="number" step="any" id="setHookMult" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setMinHook">Min Hook ($U$3 mm)</label>
+            <input type="number" step="any" id="setMinHook" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setUnitWt">Unit Wt Div ($W$3)</label>
+            <input type="number" step="any" id="setUnitWt" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setScaleDiv">Scale mm/kg ($Y$3)</label>
+            <input type="number" step="any" id="setScaleDiv" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setSwDowel">SW Dowel ($P$3 mm)</label>
+            <input type="number" step="any" id="setSwDowel" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setSwOff">SW Inner Off ($O$4)</label>
+            <input type="number" step="any" id="setSwOff" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCompatHt">Compat Tie Ht ($Q$4)</label>
+            <input type="number" step="any" id="setCompatHt" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCf1Ht">CF1 SW Ht ($S$4 mm)</label>
+            <input type="number" step="any" id="setCf1Ht" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCf2Ht">CF2 SW Ht ($U$4 mm)</label>
+            <input type="number" step="any" id="setCf2Ht" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setTieDiv16">Tie Div ≥16 ($W$4)</label>
+            <input type="number" step="any" id="setTieDiv16" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setTieDivLt16">Tie Div &lt;16 ($Y$4)</label>
+            <input type="number" step="any" id="setTieDivLt16" class="const-input" />
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
@@ -837,6 +995,7 @@
               <button type="button" id="filterAllBtn" class="seg-btn active">All</button>
               <button type="button" id="filterVerifyBtn" class="seg-btn">Verify Only (<span id="verifyCountLabel">0</span>)</button>
             </div>
+            <button type="button" id="toggleParamsBtn" title="Show/edit Excel Reference Constant columns Z:AD">Show Z:AD Constants</button>
           </div>
         </div>
 
@@ -854,7 +1013,7 @@
         </div>
 
         <div class="table-wrap">
-          <table>
+          <table id="bbsTable">
             <thead>
               <tr>
                 <th>Sr</th>
@@ -870,6 +1029,11 @@
                 <th>Cut Len (mm)</th>
                 <th>Weight (kg)</th>
                 <th>Remark</th>
+                <th class="col-param">Depth/B (Z)</th>
+                <th class="col-param">Width/Dist (AA)</th>
+                <th class="col-param">Off/Adj (AB)</th>
+                <th class="col-param">Qty (AC)</th>
+                <th class="col-param">Layers/C (AD)</th>
                 <th></th>
               </tr>
             </thead>
@@ -885,14 +1049,101 @@
   </section>
 </main>
 
+<div id="formulaPopover" class="formula-popover hidden" role="tooltip"></div>
+
 <script>
 let currentDoc = null;
 let previewVisible = true;
+let showParams = false;
 let filterMode = "all";
 let searchQuery = "";
 let exportBusy = false;
+let popoverTimer = null;
+let popoverPinned = false;
+let firstTieRowMap = {};
+
+const DIAMETER_COLUMNS = [8, 10, 12, 16, 20, 25, 32, 36, 40];
+const GLOBAL_CONST_CELLS = {
+  "$S$2": ["footing_cover_mm", "Footing Cover"],
+  "$U$2": ["column_cover_mm", "Col Cover"],
+  "$W$2": ["column_height_mm", "Col Height"],
+  "$Y$2": ["ld_vertical_mm", "Vert. Ld"],
+  "$P$3": ["sw_dowel_mm", "SW Dowel"],
+  "$S$3": ["hook_mult", "Hook Mult"],
+  "$U$3": ["hook_min_mm", "Min Hook"],
+  "$W$3": ["unit_wt_divisor", "Unit Wt Div"],
+  "$Y$3": ["scale_divisor", "Kg/MT Scale"],
+  "$O$4": ["sw_inner_offset_mm", "SW Inner Off"],
+  "$Q$4": ["compat_tie_ht_mm", "Tie Compat Ht"],
+  "$S$4": ["shear_wall_ht_cf1_mm", "CF1 SW Ht"],
+  "$U$4": ["shear_wall_ht_cf2_mm", "CF2 SW Ht"],
+  "$W$4": ["tie_step_div_ge16", "Tie Div (>=16)"],
+  "$Y$4": ["tie_step_div_lt16", "Tie Div (<16)"],
+};
+const ROW_COL_ATTR = {
+  D: "span_mm", E: "dia_mm", J: "spacing_mm", K: "nos", L: "multiple_no",
+  M: "total_nos", N: "cut_length_mm", Z: "param_z", AA: "param_aa",
+  AB: "param_ab", AC: "param_ac", AD: "param_ad",
+};
 
 const $ = (id) => document.getElementById(id);
+
+function fmt(val) {
+  const n = Number(val);
+  if (!Number.isFinite(n) || n === 0) return "0";
+  if (Math.abs(n - Math.round(n)) < 1e-11) return String(Math.round(n));
+  const s = Number(n.toPrecision(12)).toString();
+  return s === "-0" ? "0" : s;
+}
+
+function resolveFormulaDisplay(expr, rowIdx, rows, settings, firstTieExcelRow) {
+  if (!expr || !String(expr).startsWith("=")) return null;
+  const curExcel = 8 + rowIdx;
+  const idToIdx = {};
+  rows.forEach((r, i) => { if (r && r.id) idToIdx[r.id] = i; });
+  let missingDep = false;
+
+  let normalized = String(expr)
+    .replace(/SELF_SPAN/g, "@SELF:D")
+    .replace(/PREV_SPAN/g, "@PREV:D")
+    .replace(/PREV_CUT/g, "@PREV:N")
+    .replace(/PREV_TIE/g, "@PREV:D");
+
+  if (normalized.includes("FIRST_TIE_NOS")) {
+    const ftRow = firstTieExcelRow !== null && firstTieExcelRow !== undefined ? firstTieExcelRow : curExcel - 1;
+    const ftIdx = ftRow - 8;
+    if (ftIdx >= 0 && ftIdx < rows.length) {
+      normalized = normalized.replace(/FIRST_TIE_NOS/g, `@ID:${rows[ftIdx].id}:K`);
+    } else missingDep = true;
+  }
+  if (missingDep) return null;
+
+  const symRe = /@(SELF|PREV):([A-Z]{1,2})|@ID:([A-Za-z0-9_]+):([A-Z]{1,2})|(\$[A-Z]+\$\d+)/g;
+  const excelFormula = normalized.replace(symRe, (m, rel, col, refId, idCol, gconst) => {
+    if (gconst) return gconst;
+    if (rel === "SELF") return `${col}${curExcel}`;
+    if (rel === "PREV") { if (curExcel - 1 < 8) { missingDep = true; return "0"; } return `${col}${curExcel - 1}`; }
+    if (refId !== undefined) { if (!(refId in idToIdx)) { missingDep = true; return "0"; } return `${idCol}${8 + idToIdx[refId]}`; }
+    return m;
+  });
+  const displayExpr = normalized.replace(symRe, (m, rel, col, refId, idCol, gconst) => {
+    if (gconst) {
+      const meta = GLOBAL_CONST_CELLS[gconst];
+      if (!meta) { missingDep = true; return "0"; }
+      return fmt(settings[meta[0]]);
+    }
+    const getAttr = (r, c) => {
+      const attr = ROW_COL_ATTR[c];
+      return attr && r && r[attr] !== null && r[attr] !== undefined ? Number(r[attr]) : 0;
+    };
+    if (rel === "SELF") return fmt(getAttr(rows[rowIdx], col));
+    if (rel === "PREV") { if (rowIdx - 1 < 0) { missingDep = true; return "0"; } return fmt(getAttr(rows[rowIdx - 1], col)); }
+    if (refId !== undefined) { if (!(refId in idToIdx)) { missingDep = true; return "0"; } return fmt(getAttr(rows[idToIdx[refId]], idCol)); }
+    return m;
+  }).replace(/^=+/, "");
+
+  return missingDep ? null : { excelFormula, displayExpr };
+}
 
 function escapeHtml(str) {
   return String(str ?? "")
@@ -1005,17 +1256,21 @@ function renderAuditRow(label, countsObj) {
 function renderKpis(doc) {
   const dias = [8, 10, 12, 16, 20, 25, 32];
   const totalMt = Number(doc.total_weight_mt || 0);
-  const totalKg = Math.round(totalMt * 1000).toLocaleString();
+  const scale = Number((doc.settings && doc.settings.scale_divisor) || 1000);
+  const totalKg = totalMt * scale;
   const inferredCount = (doc.rows || []).filter((r) => r.inferred).length;
 
   let html = `
     <div class="kpi highlight">
       <div class="lbl">
         <span>Grand Total Steel</span>
-        <span>${doc.rows.length} rows</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;">
+          ${doc.rows.length} rows
+          <button type="button" class="fx-btn" tabindex="-1" data-fx-kpi="grand" title="Inspect formula & exact sum">fx</button>
+        </span>
       </div>
-      <div class="val">${totalMt.toFixed(3)} MT</div>
-      <div class="sub">${totalKg} kg • ${inferredCount} verify</div>
+      <div class="val">${fmt(totalMt)} MT</div>
+      <div class="sub mono">${fmt(totalKg)} kg • ${inferredCount} verify</div>
     </div>
   `;
   for (const d of dias) {
@@ -1024,14 +1279,140 @@ function renderKpis(doc) {
       const pct = totalMt > 0 ? Math.min(100, (val / totalMt) * 100) : 0;
       html += `
         <div class="kpi">
-          <div class="lbl"><span>Ø ${d} mm</span><span>${pct.toFixed(0)}%</span></div>
-          <div class="val">${val.toFixed(3)} MT</div>
-          <div class="kpi-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+          <div class="lbl"><span>Ø ${d} mm</span><span>${fmt(pct)}%</span></div>
+          <div class="val">${fmt(val)} MT</div>
+          <div class="kpi-bar"><span style="width:${pct}%"></span></div>
         </div>
       `;
     }
   }
   $("kpiGrid").innerHTML = html;
+}
+
+function buildFormulaDetails(idx, field) {
+  if (!currentDoc || !currentDoc.rows[idx]) return null;
+  const row = currentDoc.rows[idx];
+  const st = currentDoc.settings;
+  const excelR = 8 + idx;
+  const ftR = firstTieRowMap[row.group_key] ?? null;
+  const baseHeader = `${row.bar_mark || row.group_key || "Row"} — ${row.description}`;
+
+  const paramParts = [];
+  if (row.param_z !== null && row.param_z !== undefined) paramParts.push(`Z${excelR}=${fmt(row.param_z)}`);
+  if (row.param_aa !== null && row.param_aa !== undefined) paramParts.push(`AA${excelR}=${fmt(row.param_aa)}`);
+  if (row.param_ab !== null && row.param_ab !== undefined) paramParts.push(`AB${excelR}=${fmt(row.param_ab)}`);
+  if (row.param_ac !== null && row.param_ac !== undefined) paramParts.push(`AC${excelR}=${fmt(row.param_ac)}`);
+  if (row.param_ad !== null && row.param_ad !== undefined) paramParts.push(`AD${excelR}=${fmt(row.param_ad)}`);
+  const basisNote = [paramParts.join(" • "), row.param_ae].filter(Boolean).join(" | ");
+
+  const resolve = (expr) => resolveFormulaDisplay(expr, idx, currentDoc.rows, st, ftR);
+
+  if (field === "span_mm") {
+    const res = resolve(row.span_expr);
+    if (res) return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.span_mm)} mm`, basis: basisNote || "Live Excel cell formula" };
+    return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: `Static input (${fmt(row.span_mm)})`, calculation: `Direct CAD / edited input = ${fmt(row.span_mm)} mm`, basis: basisNote || "Direct input value" };
+  }
+  if (field === "nos") {
+    const res = resolve(row.nos_expr);
+    if (res) return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.nos)}`, basis: basisNote || "Live spacing / length distribution" };
+    return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: `Static input (${fmt(row.nos)})`, calculation: `From schedule / manual entry = ${fmt(row.nos)}`, basis: basisNote || "Direct bar count input" };
+  }
+  if (field === "multiple_no") {
+    const res = resolve(row.multiple_expr);
+    if (res) return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.multiple_no)}`, basis: basisNote || "Product of Qty × Layers" };
+    return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: `Static input (${fmt(row.multiple_no)})`, calculation: `Direct multiplier = ${fmt(row.multiple_no)}`, basis: basisNote || "Direct multiplier entry" };
+  }
+  if (field === "total_nos") {
+    return { title: `Total Nos • ${baseHeader}`, cellTag: `Col M${excelR}`, excelFormula: `=+L${excelR}*K${excelR}`, calculation: `${fmt(row.multiple_no)} × ${fmt(row.nos)} = ${fmt(row.total_nos)}`, basis: `L${excelR} (Mult) × K${excelR} (Nos)` };
+  }
+  if (field === "cut_length_mm") {
+    const res = resolve(row.cut_length_expr);
+    if (res) return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.cut_length_mm)} mm`, basis: basisNote || "Live cut-length cell formula" };
+    return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: `Static input (${fmt(row.cut_length_mm)})`, calculation: `Direct manual value = ${fmt(row.cut_length_mm)} mm`, basis: basisNote || "Manual cut length input" };
+  }
+  if (field === "weight_kg") {
+    const dIdx = DIAMETER_COLUMNS.indexOf(Math.round(Number(row.dia_mm)));
+    const diaCol = dIdx >= 0 ? String.fromCharCode(80 + dIdx) : "P";
+    const unitDiv = Number(st.unit_wt_divisor || 162);
+    const scaleDiv = Number(st.scale_divisor || 1000);
+    const lenM = Number(row.cut_length_mm || 0) / scaleDiv;
+    const unitWt = (Number(row.dia_mm || 0) * Number(row.dia_mm || 0)) / unitDiv;
+    return {
+      title: `Steel Weight (kg) • ${baseHeader}`,
+      cellTag: `Cols ${diaCol}${excelR}`,
+      excelFormula: `=IF($E${excelR}=${diaCol}$6,$M${excelR},0)*($N${excelR}*$E${excelR}*$E${excelR}/($W$3*$Y$3))`,
+      calculation: `${fmt(row.total_nos)} × (${fmt(row.cut_length_mm)} / ${fmt(scaleDiv)}) × (${fmt(row.dia_mm)}² / ${fmt(unitDiv)}) = ${fmt(row.total_nos)} × ${fmt(lenM)} m × ${fmt(unitWt)} kg/m = ${fmt(row.weight_kg)} kg`,
+      basis: `$W$3=${fmt(unitDiv)} (D²/k) • $Y$3=${fmt(scaleDiv)} (mm/m & kg/MT)`,
+    };
+  }
+  return null;
+}
+
+function buildKpiGrandDetails() {
+  if (!currentDoc) return null;
+  const sumRow = 8 + Math.max(0, currentDoc.rows.length - 1) + 2;
+  const scale = Number((currentDoc.settings && currentDoc.settings.scale_divisor) || 1000);
+  const terms = DIAMETER_COLUMNS
+    .map((d) => ({ d, mt: Number((currentDoc.totals_by_dia_mt && currentDoc.totals_by_dia_mt[d]) || 0) }))
+    .filter((x) => x.mt > 0);
+  const expr = terms.length ? terms.map((x) => `${fmt(x.mt)}`).join(" + ") : "0";
+  return {
+    title: "Grand Total Steel Tonnage",
+    cellTag: `Col P${sumRow + 2}`,
+    excelFormula: `=SUM(P${sumRow}:X${sumRow})  [each col = SUM(col8:col${sumRow - 2})/$Y$3]`,
+    calculation: `${expr} = ${fmt(currentDoc.total_weight_mt)} MT (${fmt(currentDoc.total_weight_mt * scale)} kg)`,
+    basis: "Unrounded sum across all Ø columns in MT (1 MT = $Y$3 kg)",
+  };
+}
+
+function positionPopover(anchorEl) {
+  const pop = $("formulaPopover");
+  const rect = anchorEl.getBoundingClientRect();
+  const pad = 12;
+  pop.classList.remove("hidden");
+  const pw = pop.offsetWidth;
+  const ph = pop.offsetHeight;
+  let left = rect.right - pw;
+  if (left < pad) left = rect.left;
+  if (left + pw > window.innerWidth - pad) left = Math.max(pad, window.innerWidth - pw - pad);
+  let top = rect.bottom + 8;
+  if (top + ph > window.innerHeight - pad) top = Math.max(pad, rect.top - ph - 8);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+}
+
+function showFormulaPopover(anchorEl, details, pin = false) {
+  if (!details) return;
+  if (popoverTimer) { clearTimeout(popoverTimer); popoverTimer = null; }
+  popoverPinned = pin;
+  const pop = $("formulaPopover");
+  pop.innerHTML = `
+    <div class="fp-head">
+      <div class="fp-title">${escapeHtml(details.title)}</div>
+      <span class="fp-cell-tag">${escapeHtml(details.cellTag)}</span>
+    </div>
+    <div class="fp-row">
+      <span class="fp-lbl">Excel Formula</span>
+      <code class="fp-code">${escapeHtml(details.excelFormula)}</code>
+    </div>
+    <div class="fp-row">
+      <span class="fp-lbl">Exact Calculation (Unrounded)</span>
+      <code class="fp-code fp-result">${escapeHtml(details.calculation)}</code>
+    </div>
+    <div class="fp-row"><span class="fp-meta">${escapeHtml(details.basis || "")}</span></div>
+  `;
+  positionPopover(anchorEl);
+}
+
+function hideFormulaPopover(force = false) {
+  if (!force && popoverPinned) return;
+  if (popoverTimer) { clearTimeout(popoverTimer); popoverTimer = null; }
+  popoverPinned = false;
+  $("formulaPopover").classList.add("hidden");
+}
+
+function fxButtonHtml(idx, field, isDynamic = true) {
+  return `<button type="button" class="fx-btn${isDynamic ? "" : " manual"}" tabindex="-1" data-fx-idx="${idx}" data-fx-field="${field}" aria-label="Show formula and exact calculation">fx</button>`;
 }
 
 function updateExportButtonState() {
@@ -1068,22 +1449,43 @@ function applyGridFilter() {
   $("emptyFilterMsg").classList.toggle("hidden", !(total > 0 && visible === 0));
 }
 
+function numInputOrDefault(id, fallback) {
+  const raw = $(id).value;
+  if (raw === "" || raw === null || raw === undefined) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function renderDocument(doc, previewUrl) {
   currentDoc = doc;
+  hideFormulaPopover(true);
   $("workspace").classList.remove("hidden");
   $("addRowBtn").disabled = false;
   $("togglePreviewBtn").disabled = false;
   updateExportButtonState();
 
+  const s = doc.settings;
   $("metaProject").value = doc.project_name || "";
   $("metaDrawing").value = doc.drawing_no || "";
   $("metaLocation").value = doc.location || "";
   $("metaStructure").value = doc.structure || "";
-  $("setFootCov").value = doc.settings.footing_cover_mm;
-  $("setColCov").value = doc.settings.column_cover_mm;
-  $("setColHt").value = doc.settings.column_height_mm;
-  $("setMode").value = doc.settings.mode;
-  $("setRoundUp").value = String(doc.settings.round_up_nos);
+  $("setFootCov").value = fmt(s.footing_cover_mm);
+  $("setColCov").value = fmt(s.column_cover_mm);
+  $("setColHt").value = fmt(s.column_height_mm);
+  $("setLdVert").value = fmt(s.ld_vertical_mm);
+  $("setHookMult").value = fmt(s.hook_mult);
+  $("setMinHook").value = fmt(s.hook_min_mm);
+  $("setUnitWt").value = fmt(s.unit_wt_divisor ?? 162);
+  $("setScaleDiv").value = fmt(s.scale_divisor ?? 1000);
+  $("setSwDowel").value = fmt(s.sw_dowel_mm ?? 300);
+  $("setSwOff").value = fmt(s.sw_inner_offset_mm ?? 80);
+  $("setCompatHt").value = fmt(s.compat_tie_ht_mm ?? 4500);
+  $("setCf1Ht").value = fmt(s.shear_wall_ht_cf1_mm);
+  $("setCf2Ht").value = fmt(s.shear_wall_ht_cf2_mm);
+  $("setTieDiv16").value = fmt(s.tie_step_div_ge16 ?? 6);
+  $("setTieDivLt16").value = fmt(s.tie_step_div_lt16 ?? 5);
+  $("setMode").value = s.mode;
+  $("setRoundUp").value = String(s.round_up_nos);
 
   if (typeof previewUrl === "string") {
     if (previewUrl.length > 0) {
@@ -1114,6 +1516,13 @@ function renderDocument(doc, previewUrl) {
     $("warnBox").classList.add("hidden");
   }
 
+  firstTieRowMap = {};
+  doc.rows.forEach((row, idx) => {
+    if (String(row.description || "").includes("COL.TIES") && !(row.group_key in firstTieRowMap)) {
+      firstTieRowMap[row.group_key] = 8 + idx;
+    }
+  });
+
   renderKpis(doc);
   $("rowCountLabel").textContent = doc.rows.length;
   $("verifyCountLabel").textContent = doc.rows.filter((r) => r.inferred).length;
@@ -1124,20 +1533,28 @@ function renderDocument(doc, previewUrl) {
     const tr = document.createElement("tr");
     tr.dataset.idx = String(idx);
     if (row.inferred) tr.classList.add("inferred");
+    const pInput = (field, val) =>
+      `<td class="num col-param"><input type="number" step="any" data-idx="${idx}" data-field="${field}" value="${val !== null && val !== undefined ? fmt(val) : ""}" style="width:76px"/></td>`;
+
     tr.innerHTML = `
       <td class="mono" style="text-align:center;font-weight:700;">${row.sr_no ?? ""}</td>
       <td><input type="text" data-idx="${idx}" data-field="bar_mark" value="${escapeHtml(row.bar_mark)}" style="min-width:115px"/></td>
-      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:165px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ""}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="span_mm" value="${Math.round(row.span_mm)}" style="width:74px"/></td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="dia_mm" value="${row.dia_mm}" style="width:54px"/></td>
+      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:160px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ""}</td>
+      <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="span_mm" value="${fmt(row.span_mm)}" style="width:94px"/>${fxButtonHtml(idx, "span_mm", Boolean(row.span_expr))}</div></td>
+      <td class="num"><input type="number" step="any" data-idx="${idx}" data-field="dia_mm" value="${fmt(row.dia_mm)}" style="width:54px"/></td>
       <td class="shape-cell">${renderShapeSvg(row.shape)}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="spacing_mm" value="${row.spacing_mm ?? ""}" style="width:62px"/></td>
-      <td class="num"><input type="number" step="0.01" data-idx="${idx}" data-field="nos" value="${Number(row.nos.toFixed(3))}" style="width:70px"/></td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="multiple_no" value="${Number(row.multiple_no.toFixed(2))}" style="width:60px"/></td>
-      <td class="calc-cell">${Number(row.total_nos.toFixed(2))}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="cut_length_mm" value="${Math.round(row.cut_length_mm)}" style="width:76px"/></td>
-      <td class="calc-cell">${row.weight_kg.toFixed(3)}</td>
-      <td><input type="text" data-idx="${idx}" data-field="remark" value="${escapeHtml(row.remark)}" style="min-width:105px"/></td>
+      <td class="num"><input type="number" step="any" data-idx="${idx}" data-field="spacing_mm" value="${row.spacing_mm !== null && row.spacing_mm !== undefined ? fmt(row.spacing_mm) : ""}" style="width:62px"/></td>
+      <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="nos" value="${fmt(row.nos)}" style="width:94px"/>${fxButtonHtml(idx, "nos", Boolean(row.nos_expr))}</div></td>
+      <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="multiple_no" value="${fmt(row.multiple_no)}" style="width:66px"/>${fxButtonHtml(idx, "multiple_no", Boolean(row.multiple_expr))}</div></td>
+      <td class="calc-cell"><div class="cell-fx"><span>${fmt(row.total_nos)}</span>${fxButtonHtml(idx, "total_nos", true)}</div></td>
+      <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="cut_length_mm" value="${fmt(row.cut_length_mm)}" style="width:94px"/>${fxButtonHtml(idx, "cut_length_mm", Boolean(row.cut_length_expr))}</div></td>
+      <td class="calc-cell"><div class="cell-fx"><span>${fmt(row.weight_kg)}</span>${fxButtonHtml(idx, "weight_kg", true)}</div></td>
+      <td><input type="text" data-idx="${idx}" data-field="remark" value="${escapeHtml(row.remark)}" style="min-width:100px"/></td>
+      ${pInput("param_z", row.param_z)}
+      ${pInput("param_aa", row.param_aa)}
+      ${pInput("param_ab", row.param_ab)}
+      ${pInput("param_ac", row.param_ac)}
+      ${pInput("param_ad", row.param_ad)}
       <td><button type="button" class="del-btn" data-del="${idx}" title="Remove row" aria-label="Remove row">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -1159,11 +1576,24 @@ function syncMetaFields() {
   currentDoc.drawing_no = $("metaDrawing").value;
   currentDoc.location = $("metaLocation").value;
   currentDoc.structure = $("metaStructure").value;
-  currentDoc.settings.footing_cover_mm = Number($("setFootCov").value) || 50;
-  currentDoc.settings.column_cover_mm = Number($("setColCov").value) || 40;
-  currentDoc.settings.column_height_mm = Number($("setColHt").value) || 4550;
-  currentDoc.settings.mode = $("setMode").value;
-  currentDoc.settings.round_up_nos = $("setRoundUp").value === "true";
+  const s = currentDoc.settings;
+  s.footing_cover_mm = numInputOrDefault("setFootCov", 50);
+  s.column_cover_mm = numInputOrDefault("setColCov", 40);
+  s.column_height_mm = numInputOrDefault("setColHt", 4550);
+  s.ld_vertical_mm = numInputOrDefault("setLdVert", 450);
+  s.hook_mult = numInputOrDefault("setHookMult", 8);
+  s.hook_min_mm = numInputOrDefault("setMinHook", 75);
+  s.unit_wt_divisor = numInputOrDefault("setUnitWt", 162);
+  s.scale_divisor = numInputOrDefault("setScaleDiv", 1000);
+  s.sw_dowel_mm = numInputOrDefault("setSwDowel", 300);
+  s.sw_inner_offset_mm = numInputOrDefault("setSwOff", 80);
+  s.compat_tie_ht_mm = numInputOrDefault("setCompatHt", 4500);
+  s.shear_wall_ht_cf1_mm = numInputOrDefault("setCf1Ht", 1650);
+  s.shear_wall_ht_cf2_mm = numInputOrDefault("setCf2Ht", 3000);
+  s.tie_step_div_ge16 = numInputOrDefault("setTieDiv16", 6);
+  s.tie_step_div_lt16 = numInputOrDefault("setTieDivLt16", 5);
+  s.mode = $("setMode").value;
+  s.round_up_nos = $("setRoundUp").value === "true";
 }
 
 async function postJsonAndRender(endpoint, doc, previewUrl = null) {
@@ -1190,11 +1620,14 @@ async function onCellEdit(e) {
 
   if (field === "bar_mark" || field === "description" || field === "remark") {
     row[field] = e.target.value;
+  } else if (field.startsWith("param_")) {
+    row[field] = e.target.value === "" ? null : Number(e.target.value);
   } else {
     const val = e.target.value === "" ? null : Number(e.target.value);
     row[field] = val ?? 0;
     if (field === "span_mm") row.span_expr = null;
     if (field === "nos") row.nos_expr = null;
+    if (field === "multiple_no") row.multiple_expr = null;
     if (field === "cut_length_mm") row.cut_length_expr = null;
   }
   syncMetaFields();
@@ -1236,8 +1669,15 @@ function buildBlankStarterDoc() {
       ld_vertical_mm: 450,
       hook_mult: 8,
       hook_min_mm: 75,
+      unit_wt_divisor: 162,
+      scale_divisor: 1000,
       shear_wall_ht_cf1_mm: 1650,
       shear_wall_ht_cf2_mm: 3000,
+      sw_dowel_mm: 300,
+      sw_inner_offset_mm: 80,
+      compat_tie_ht_mm: 4500,
+      tie_step_div_ge16: 6,
+      tie_step_div_lt16: 5,
       include_chairs_spacers: true,
     },
     schedule: [],
@@ -1255,12 +1695,17 @@ function buildBlankStarterDoc() {
         spacing_mm: 150,
         nos_expr: null,
         nos: 12,
+        multiple_expr: "=@SELF:AC*@SELF:AD",
         multiple_no: 1,
         total_nos: 12,
-        cut_length_expr: null,
+        cut_length_expr: "=(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)+(@SELF:Z-2*$S$2)-(2*@SELF:E)",
         cut_length_mm: 3376,
         coupler: 0,
         weight_kg: 0,
+        param_z: 650,
+        param_ac: 1,
+        param_ad: 1,
+        param_ae: "Z=Depth(mm); AC=BoxQty; AD=Layers",
         remark: "Manual starter row",
         inferred: false,
         source_note: "Manual starter",
@@ -1270,6 +1715,61 @@ function buildBlankStarterDoc() {
     parse_stats: {},
   };
 }
+
+document.addEventListener("pointerover", (e) => {
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+  if (!btn || popoverPinned) return;
+  const details = btn.dataset.fxKpi === "grand"
+    ? buildKpiGrandDetails()
+    : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
+  showFormulaPopover(btn, details, false);
+});
+
+document.addEventListener("pointerout", (e) => {
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+  if (!btn || popoverPinned) return;
+  popoverTimer = setTimeout(() => hideFormulaPopover(false), 90);
+});
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+  if (btn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const details = btn.dataset.fxKpi === "grand"
+      ? buildKpiGrandDetails()
+      : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
+    showFormulaPopover(btn, details, true);
+    return;
+  }
+  if (!e.target.closest("#formulaPopover")) {
+    hideFormulaPopover(true);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hideFormulaPopover(true);
+});
+
+$("workspace").querySelectorAll(".const-input").forEach((inp) => {
+  inp.addEventListener("change", async () => {
+    if (!currentDoc) return;
+    syncMetaFields();
+    if (inp.id === "setMode" && currentDoc.schedule && currentDoc.schedule.length > 0) {
+      const ok = await postJsonAndRender("/api/rebuild", currentDoc, null);
+      if (ok) showToast(`Switched mode to ${currentDoc.settings.mode}.`, "info");
+    } else {
+      const ok = await postJsonAndRender("/api/recalculate", currentDoc, null);
+      if (ok) showToast("Sheet constant updated — UI & .xlsx formulas synced.", "info");
+    }
+  });
+});
+
+$("toggleParamsBtn").addEventListener("click", () => {
+  showParams = !showParams;
+  $("bbsTable").classList.toggle("show-params", showParams);
+  $("toggleParamsBtn").textContent = showParams ? "Hide Z:AD Constants" : "Show Z:AD Constants";
+});
 
 $("themeToggleBtn").addEventListener("click", () => {
   const cur = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -1289,11 +1789,16 @@ $("addRowBtn").addEventListener("click", async () => {
     shape: { kind: "straight", labels: { text: "Custom" } },
     spacing_mm: null,
     nos: 1,
+    multiple_expr: "=@SELF:AC*@SELF:AD",
     multiple_no: 1,
     total_nos: 1,
+    cut_length_expr: "=@SELF:D",
     cut_length_mm: 1000,
     coupler: 0,
     weight_kg: 0,
+    param_ac: 1,
+    param_ad: 1,
+    param_ae: "CutLen=@SELF:D; AC=Qty; AD=Layers",
     remark: "",
     inferred: false,
     source_note: "Manual row",
@@ -1359,7 +1864,7 @@ async function parseSelectedFile(file) {
     $("filterAllBtn").classList.add("active");
     $("filterVerifyBtn").classList.remove("active");
     renderDocument(data.document, data.preview_image);
-    showToast(`Parsed ${data.document.rows.length} BBS rows (${data.document.total_weight_mt.toFixed(3)} MT).`, "success");
+    showToast(`Parsed ${data.document.rows.length} BBS rows (${fmt(data.document.total_weight_mt)} MT).`, "success");
   } catch (err) {
     console.error(err);
     showToast("Failed to parse PDF: " + (err.message || err), "error", 6500);

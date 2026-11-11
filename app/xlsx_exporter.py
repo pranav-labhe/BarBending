@@ -1,44 +1,52 @@
-"""Excel (.xlsx) Bar Bending Schedule exporter with live formulas and native DrawingML shapes."""
+"""Excel (.xlsx) Bar Bending Schedule exporter with constant cells, column formulas, and DrawingML shapes."""
 
 from __future__ import annotations
 
 import io
-import re
 from typing import Optional
 
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from app.bbs_calculator import recalculate_document
 from app.drawingml_injector import inject_drawingml_shapes
+from app.formula_engine import GLOBAL_CONST_CELLS, resolve_row_formula
 from app.models import DIAMETER_COLUMNS, BbsDocument, ShapeSpec
 
 COL_WIDTHS: dict[int, float] = {
     1: 13.2,
     2: 16.5,
     3: 35.7,
-    4: 12.0,
+    4: 13.5,
     5: 9.5,
     6: 7.8,
     7: 7.8,
     8: 9.0,
     9: 9.3,
     10: 15.2,
-    11: 12.0,
+    11: 14.5,
     12: 33.0,
-    13: 13.5,
-    14: 13.8,
+    13: 15.0,
+    14: 15.0,
     15: 15.7,
     16: 21.3,
-    17: 14.5,
-    18: 15.7,
-    19: 15.0,
-    20: 16.7,
-    21: 12.7,
-    22: 12.7,
-    23: 12.7,
-    24: 12.7,
+    17: 15.5,
+    18: 16.5,
+    19: 15.5,
+    20: 17.0,
+    21: 14.0,
+    22: 14.5,
+    23: 14.0,
+    24: 14.5,
     25: 26.3,
+    # Reference Parameter Constants Block (Z..AE)
+    26: 15.5,  # Z
+    27: 16.5,  # AA
+    28: 15.5,  # AB
+    29: 14.5,  # AC
+    30: 15.5,  # AD
+    31: 42.0,  # AE
 }
 
 THIN = Side(style="thin", color="BFBFBF")
@@ -48,35 +56,42 @@ HEADER_BORDER = Border(left=THIN, right=THIN, top=MED, bottom=MED)
 
 TITLE_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 SUBHDR_FILL = PatternFill(start_color="EDF2F8", end_color="EDF2F8", fill_type="solid")
+CONST_LBL_FILL = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+CONST_VAL_FILL = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
+PARAM_HDR_FILL = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
 TOTAL_GREEN_FILL = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
 INFERRED_FILL = PatternFill(start_color="FFF9DB", end_color="FFF9DB", fill_type="solid")
 
-WEIGHT_FMT = '_-* #,##0.000_-;\\-* #,##0.000_-;_-* "-"_-;_-@_-'
-TOTAL_MT_FMT = "#,##0.000_ ;\\-#,##0.000\\ "
+# Strict zero-rounding display: "General" shows exact unrounded decimals without trailing dots
+EXACT_FMT = "General"
 
 
-def _resolve_formula(
-    expr: Optional[str],
-    excel_row: int,
-    first_tie_row: Optional[int],
-) -> Optional[str]:
-    """Resolve symbolic row-relative formula tokens into valid Excel A1 formulas."""
-    if not expr or not expr.startswith("="):
-        return None
-    out = expr
-    out = out.replace("SELF_SPAN", f"D{excel_row}")
-    out = out.replace("PREV_SPAN", f"D{excel_row - 1}")
-    out = out.replace("PREV_CUT", f"N{excel_row - 1}")
-    if "FIRST_TIE_NOS" in out:
-        target = first_tie_row if first_tie_row is not None else excel_row - 1
-        out = out.replace("FIRST_TIE_NOS", f"K{target}")
-    if "PREV_TIE" in out:
-        out = out.replace("PREV_TIE", f"D{excel_row - 1}")
-    return out
+def _set_const_pair(
+    ws: openpyxl.worksheet.worksheet.Worksheet,
+    row: int,
+    lbl_col: int,
+    val_col: int,
+    label: str,
+    value: float,
+    lbl_font: Font,
+    val_font: Font,
+) -> None:
+    c_lbl = ws.cell(row, lbl_col, label)
+    c_lbl.font = lbl_font
+    c_lbl.fill = CONST_LBL_FILL
+    c_lbl.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+    c_val = ws.cell(row, val_col, value)
+    c_val.font = val_font
+    c_val.fill = CONST_VAL_FILL
+    c_val.number_format = EXACT_FMT
+    c_val.alignment = Alignment(horizontal="center", vertical="center")
 
 
 def export_bbs_xlsx(doc: BbsDocument) -> bytes:
-    """Build an .xlsx workbook with live Excel formulas and injected DrawingML rebar shapes."""
+    """Build an .xlsx workbook with global constant cells, column formulas, and DrawingML shapes."""
+    recalc = recalculate_document(doc.model_copy(deep=True))
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "FORMAT"
@@ -85,7 +100,6 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     for col_idx, width in COL_WIDTHS.items():
         ws.column_dimensions[get_column_letter(col_idx)].width = width
 
-    # Row heights for header
     ws.row_dimensions[1].height = 49.9
     ws.row_dimensions[2].height = 38.45
     ws.row_dimensions[3].height = 38.45
@@ -103,36 +117,43 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         ws.cell(1, c).fill = TITLE_FILL
         ws.cell(1, c).border = HEADER_BORDER
 
-    # Rows 2-4: Metadata block
+    # Rows 2-4: Metadata (A..Q) & Labeled Engineering Constants (O3:Q4, R2:Y4)
     meta_font = Font(name="Calibri Light", size=18, bold=True)
     meta_val_font = Font(name="Calibri Light", size=16, bold=True)
+    const_lbl_font = Font(name="Calibri", size=11, bold=True, color="1E3A8A")
+    const_val_font = Font(name="Calibri", size=13, bold=True, color="0F172A")
+
     ws.merge_cells("A2:B2")
     ws.merge_cells("C2:I2")
     ws.merge_cells("J2:K2")
     ws.merge_cells("L2:Q2")
-    ws.merge_cells("R2:Y4")
     ws["A2"] = "Project:- "
-    ws["C2"] = doc.project_name
+    ws["C2"] = recalc.project_name
     ws["J2"] = "Drawing No:- "
-    ws["L2"] = doc.drawing_no
+    ws["L2"] = recalc.drawing_no
 
     ws.merge_cells("A3:B3")
     ws.merge_cells("C3:I3")
     ws.merge_cells("J3:K3")
     ws.merge_cells("L3:N3")
+    ws.merge_cells("P3:Q3")
     ws["A3"] = "Location: "
-    ws["C3"] = doc.location
+    ws["C3"] = recalc.location
     ws["J3"] = "Date  "
-    if doc.date_str:
-        ws["L3"] = doc.date_str
+    if recalc.date_str:
+        ws["L3"] = recalc.date_str
     else:
         ws["L3"] = "=+TODAY()"
         ws["L3"].number_format = "yyyy-mm-dd"
 
     ws.merge_cells("A4:B4")
     ws.merge_cells("C4:I4")
+    ws.merge_cells("J4:K4")
+    ws.merge_cells("L4:M4")
     ws["A4"] = "Structure :"
-    ws["C4"] = doc.structure
+    ws["C4"] = recalc.structure
+    ws["J4"] = "Rule Mode"
+    ws["L4"] = f"{recalc.settings.mode}{' (ROUNDUP)' if recalc.settings.round_up_nos else ' (EXACT)'}"
 
     for r in range(2, 5):
         for c in range(1, 26):
@@ -141,9 +162,50 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
             cell.alignment = Alignment(horizontal="left", vertical="center")
             cell.border = CELL_BORDER
 
-    # Rows 5-6: Table Headers
+    # Explicit global constant cells ($P$3, $O$4, $Q$4, $S$2:$Y$4)
+    _set_const_pair(ws, 3, 15, 16, "SW Dowel", recalc.settings.sw_dowel_mm, const_lbl_font, const_val_font)
+    _set_const_pair(ws, 4, 14, 15, "SW Inner Off", recalc.settings.sw_inner_offset_mm, const_lbl_font, const_val_font)
+    _set_const_pair(ws, 4, 16, 17, "Tie Compat Ht", recalc.settings.compat_tie_ht_mm, const_lbl_font, const_val_font)
+
+    const_layout = [
+        (2, 18, 19, "$S$2"),
+        (2, 20, 21, "$U$2"),
+        (2, 22, 23, "$W$2"),
+        (2, 24, 25, "$Y$2"),
+        (3, 18, 19, "$S$3"),
+        (3, 20, 21, "$U$3"),
+        (3, 22, 23, "$W$3"),
+        (3, 24, 25, "$Y$3"),
+        (4, 18, 19, "$S$4"),
+        (4, 20, 21, "$U$4"),
+        (4, 22, 23, "$W$4"),
+        (4, 24, 25, "$Y$4"),
+    ]
+    for r_c, l_c, v_c, ref_key in const_layout:
+        attr_name, disp_lbl = GLOBAL_CONST_CELLS[ref_key]
+        _set_const_pair(
+            ws,
+            r_c,
+            l_c,
+            v_c,
+            disp_lbl,
+            float(getattr(recalc.settings, attr_name)),
+            const_lbl_font,
+            const_val_font,
+        )
+
+    # Row-count indices precomputed so P5 header can reference grand_row & $Y$3 dynamically
+    data_start_row = 8
+    last_data_row = data_start_row + max(0, len(recalc.rows) - 1)
+    sum_row = last_data_row + 2
+    lbl_row = sum_row + 1
+    grand_row = sum_row + 2
+    note_row = sum_row + 3
+
+    # Rows 5-6: Main Table Headers (A..Y) + Row Parameter Headers (Z..AE)
     hdr_font = Font(name="Calibri Light", size=18, bold=True)
     sub_font = Font(name="Calibri Light", size=16, bold=True)
+    param_hdr_font = Font(name="Calibri", size=11, bold=True, color="1E293B")
     headers_5 = {
         1: "Sr.No",
         2: "Bar Mark",
@@ -157,7 +219,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         13: "Total nos",
         14: "Cut Length",
         15: "Coupler",
-        16: f"Total WT. IN KG. ({round(doc.total_weight_mt * 1000):.0f})",
+        16: f'="Total WT. IN KG. ("&(P{grand_row}*$Y$3)&")"',
         25: "Remark",
     }
     for col_idx, label in headers_5.items():
@@ -179,6 +241,27 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = HEADER_BORDER
 
+    # Reference parameter columns Z..AE (Rows 5-6)
+    ws.merge_cells("Z5:AE5")
+    ws["Z5"] = "ROW REFERENCE CONSTANTS (EXCEL FORMULA INPUTS — EXCLUDED FROM A3 PRINT)"
+    param_sub = {
+        26: "Param Z\n(Depth / B)",
+        27: "Param AA\n(Width / Dist)",
+        28: "Param AB\n(Offset / Adj)",
+        29: "Param AC\n(Qty / Units)",
+        30: "Param AD\n(Layers / Const)",
+        31: "Param AE\n(Formula Basis)",
+    }
+    for col_idx, lbl in param_sub.items():
+        ws.cell(6, col_idx, lbl)
+    for r in (5, 6):
+        for c in range(26, 32):
+            cell = ws.cell(r, c)
+            cell.font = param_hdr_font
+            cell.fill = PARAM_HDR_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = HEADER_BORDER
+
     # Row 7: Structure Name sub-banner
     ws.merge_cells("A7:Y7")
     ws["A7"] = "Structure Name"
@@ -190,15 +273,15 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     # Rows 8..: Data Rows
     body_font = Font(name="Calibri Light", size=14, bold=False)
     desc_font = Font(name="Calibri Light", size=14, bold=True)
+    param_body_font = Font(name="Calibri", size=11, color="334155")
     shape_rows: list[tuple[int, ShapeSpec]] = []
 
-    data_start_row = 8
     cur_row = data_start_row
     first_tie_row_by_group: dict[str, int] = {}
     sr_merges: list[tuple[int, int]] = []
     cur_sr_start: Optional[int] = None
 
-    for row in doc.rows:
+    for idx, row in enumerate(recalc.rows):
         is_tall = row.shape.kind in ("stirrup_rect", "center_link", "combined_loop", "chair")
         ws.row_dimensions[cur_row].height = 65.25 if is_tall else 46.5
 
@@ -211,72 +294,93 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         ws.cell(cur_row, 2, row.bar_mark)
         ws.cell(cur_row, 3, row.description)
 
-        # Span (Col D)
         if "COL.TIES" in row.description and row.group_key not in first_tie_row_by_group:
             first_tie_row_by_group[row.group_key] = cur_row
         first_tie_r = first_tie_row_by_group.get(row.group_key)
 
-        span_f = _resolve_formula(row.span_expr, cur_row, first_tie_r)
+        # Span (Col D)
+        span_f, _, _ = resolve_row_formula(row.span_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if span_f:
             ws.cell(cur_row, 4, span_f)
         elif row.span_mm > 0:
             ws.cell(cur_row, 4, row.span_mm)
+        ws.cell(cur_row, 4).number_format = EXACT_FMT
 
         # Dia (Col E)
         ws.cell(cur_row, 5, row.dia_mm)
+        ws.cell(cur_row, 5).number_format = EXACT_FMT
 
         # Spacing (Col J)
         if row.spacing_mm is not None and row.spacing_mm > 0:
             ws.cell(cur_row, 10, row.spacing_mm)
+            ws.cell(cur_row, 10).number_format = EXACT_FMT
 
         # Nos (Col K)
-        nos_f = _resolve_formula(row.nos_expr, cur_row, first_tie_r)
+        nos_f, _, _ = resolve_row_formula(row.nos_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if nos_f:
             ws.cell(cur_row, 11, nos_f)
         elif row.nos > 0 or row.group_key not in ("CHAIRS", "SPACERS"):
             ws.cell(cur_row, 11, row.nos)
+        ws.cell(cur_row, 11).number_format = EXACT_FMT
 
-        # Multiple No (Col L)
-        if row.multiple_no > 0 or row.group_key not in ("CHAIRS", "SPACERS"):
+        # Multiple No (Col L) -> dynamic formula if multiple_expr present
+        mult_f, _, _ = resolve_row_formula(row.multiple_expr, idx, recalc.rows, recalc.settings, first_tie_r)
+        if mult_f:
+            ws.cell(cur_row, 12, mult_f)
+        elif row.multiple_no > 0 or row.group_key not in ("CHAIRS", "SPACERS"):
             ws.cell(cur_row, 12, row.multiple_no)
+        ws.cell(cur_row, 12).number_format = EXACT_FMT
 
         # Total Nos (Col M) -> Live Formula =+L*K
-        if row.group_key in ("CHAIRS", "SPACERS") and row.nos == 0:
-            pass
-        else:
+        is_special_empty = row.group_key in ("CHAIRS", "SPACERS") and row.nos == 0
+        if not is_special_empty:
             ws.cell(cur_row, 13, f"=+L{cur_row}*K{cur_row}")
-            ws.cell(cur_row, 13).number_format = "0"
+            ws.cell(cur_row, 13).number_format = EXACT_FMT
 
         # Cut Length (Col N)
-        cut_f = _resolve_formula(row.cut_length_expr, cur_row, first_tie_r)
+        cut_f, _, _ = resolve_row_formula(row.cut_length_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if cut_f:
             ws.cell(cur_row, 14, cut_f)
         else:
             ws.cell(cur_row, 14, row.cut_length_mm)
-        ws.cell(cur_row, 14).number_format = "0"
+        ws.cell(cur_row, 14).number_format = EXACT_FMT
 
         # Coupler (Col O)
         if row.group_key not in ("CHAIRS", "SPACERS"):
             ws.cell(cur_row, 15, row.coupler)
 
-        # Dia-wise Weight (Cols P..X) -> Live Excel Formula
-        for idx in range(len(DIAMETER_COLUMNS)):
-            col_c = 16 + idx
+        # Dia-wise Weight (Cols P..X) -> Live Excel Formula referencing $W$3 (162) & $Y$3 (1000)
+        for d_idx in range(len(DIAMETER_COLUMNS)):
+            col_c = 16 + d_idx
             col_let = get_column_letter(col_c)
-            if row.group_key in ("CHAIRS", "SPACERS") and row.nos == 0:
-                if row.weight_kg > 0 and DIAMETER_COLUMNS[idx] == row.dia_mm:
+            if is_special_empty:
+                if row.weight_kg > 0 and DIAMETER_COLUMNS[d_idx] == row.dia_mm:
                     ws.cell(cur_row, col_c, row.weight_kg)
             else:
                 ws.cell(
                     cur_row,
                     col_c,
-                    f"=IF($E{cur_row}={col_let}$6,$M{cur_row},0)*($N{cur_row}*$E{cur_row}*$E{cur_row}/(162*1000))",
+                    f"=IF($E{cur_row}={col_let}$6,$M{cur_row},0)*($N{cur_row}*$E{cur_row}*$E{cur_row}/($W$3*$Y$3))",
                 )
-            ws.cell(cur_row, col_c).number_format = WEIGHT_FMT
+            ws.cell(cur_row, col_c).number_format = EXACT_FMT
 
         # Remark (Col Y)
         if row.remark:
             ws.cell(cur_row, 25, row.remark)
+
+        # Row Reference Constants (Cols Z..AE)
+        for col_c, pval in (
+            (26, row.param_z),
+            (27, row.param_aa),
+            (28, row.param_ab),
+            (29, row.param_ac),
+            (30, row.param_ad),
+        ):
+            if pval is not None:
+                c_p = ws.cell(cur_row, col_c, pval)
+                c_p.number_format = EXACT_FMT
+        if row.param_ae:
+            ws.cell(cur_row, 31, row.param_ae)
 
         # Styling
         for c in range(1, 26):
@@ -287,6 +391,11 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
             cell.border = CELL_BORDER
             if row.inferred and c in (4, 11, 12, 14):
                 cell.fill = INFERRED_FILL
+        for c in range(26, 32):
+            pcell = ws.cell(cur_row, c)
+            pcell.font = param_body_font
+            pcell.alignment = Alignment(horizontal="left" if c == 31 else "center", vertical="center")
+            pcell.border = CELL_BORDER
 
         if row.shape and row.shape.kind:
             shape_rows.append((cur_row, row.shape))
@@ -299,14 +408,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     for r_start, r_end in sr_merges:
         ws.merge_cells(start_row=r_start, start_column=1, end_row=r_end, end_column=1)
 
-    last_data_row = cur_row - 1
-
     # Blank spacer row + Summary rows
-    sum_row = last_data_row + 2
-    lbl_row = sum_row + 1
-    grand_row = sum_row + 2
-    note_row = sum_row + 3
-
     ws.row_dimensions[last_data_row + 1].height = 24.0
     ws.row_dimensions[sum_row].height = 48.0
     ws.row_dimensions[lbl_row].height = 36.0
@@ -318,9 +420,9 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     for idx, dia in enumerate(DIAMETER_COLUMNS):
         col_c = 16 + idx
         col_let = get_column_letter(col_c)
-        c_sum = ws.cell(sum_row, col_c, f"=SUM({col_let}{data_start_row}:{col_let}{last_data_row})/1000")
+        c_sum = ws.cell(sum_row, col_c, f"=SUM({col_let}{data_start_row}:{col_let}{last_data_row})/$Y$3")
         c_sum.font = Font(name="Calibri Light", size=14, bold=True)
-        c_sum.number_format = WEIGHT_FMT
+        c_sum.number_format = EXACT_FMT
         ws.cell(lbl_row, col_c, f"{dia} mm" if dia == 8 else f"{dia}mm").font = desc_font
 
     for c in range(1, 26):
@@ -337,7 +439,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     ws.cell(grand_row, 1).alignment = Alignment(horizontal="right", vertical="center")
     gt_cell = ws.cell(grand_row, 16, f"=SUM(P{sum_row}:X{sum_row})")
     gt_cell.font = hdr_font
-    gt_cell.number_format = TOTAL_MT_FMT
+    gt_cell.number_format = EXACT_FMT
     gt_cell.alignment = Alignment(horizontal="center", vertical="center")
     for c in range(16, 25):
         ws.cell(grand_row, c).fill = TOTAL_GREEN_FILL
@@ -346,11 +448,12 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
 
     # Footer note
     ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=25)
-    note_cell = ws.cell(note_row, 1, doc.note_footer)
+    note_cell = ws.cell(note_row, 1, recalc.note_footer)
     note_cell.font = Font(name="Calibri", size=11, bold=True, color="C00000")
     note_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-    # Print setup (Landscape A3 fit 1 page wide)
+    # Print setup (Landscape A3 fit 1 page wide across A..Y printable columns)
+    ws.print_area = f"A1:Y{note_row}"
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A3
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -359,7 +462,4 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
 
     buf = io.BytesIO()
     wb.save(buf)
-    raw_bytes = buf.getvalue()
-
-    # Inject native DrawingML vector rebar shapes into columns F:I
-    return inject_drawingml_shapes(raw_bytes, shape_rows)
+    return inject_drawingml_shapes(buf.getvalue(), shape_rows)

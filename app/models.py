@@ -70,17 +70,24 @@ class BbsRow(BaseModel):
     description: str
     span_expr: Optional[str] = None
     span_mm: float = 0.0
-    dia_mm: int = 12
+    dia_mm: float = 12.0
     shape: ShapeSpec = Field(default_factory=ShapeSpec)
     spacing_mm: Optional[float] = None
     nos_expr: Optional[str] = None
     nos: float = 0.0
+    multiple_expr: Optional[str] = None
     multiple_no: float = 1.0
     total_nos: float = 0.0
     cut_length_expr: Optional[str] = None
     cut_length_mm: float = 0.0
     coupler: float = 0.0
     weight_kg: float = 0.0
+    param_z: Optional[float] = None
+    param_aa: Optional[float] = None
+    param_ab: Optional[float] = None
+    param_ac: Optional[float] = None
+    param_ad: Optional[float] = None
+    param_ae: str = ""
     remark: str = ""
     inferred: bool = False
     source_note: str = ""
@@ -91,14 +98,21 @@ class CalcSettings(BaseModel):
 
     mode: Literal["sample_compat", "strict_geometry"] = "sample_compat"
     round_up_nos: bool = False
-    footing_cover_mm: int = 50
-    column_cover_mm: int = 40
-    column_height_mm: int = 4550
-    ld_vertical_mm: int = 450
-    hook_mult: int = 8
-    hook_min_mm: int = 75
-    shear_wall_ht_cf1_mm: int = 1650
-    shear_wall_ht_cf2_mm: int = 3000
+    footing_cover_mm: float = 50.0
+    column_cover_mm: float = 40.0
+    column_height_mm: float = 4550.0
+    ld_vertical_mm: float = 450.0
+    hook_mult: float = 8.0
+    hook_min_mm: float = 75.0
+    unit_wt_divisor: float = 162.0
+    scale_divisor: float = 1000.0
+    shear_wall_ht_cf1_mm: float = 1650.0
+    shear_wall_ht_cf2_mm: float = 3000.0
+    sw_dowel_mm: float = 300.0
+    sw_inner_offset_mm: float = 80.0
+    compat_tie_ht_mm: float = 4500.0
+    tie_step_div_ge16: float = 6.0
+    tie_step_div_lt16: float = 5.0
     include_chairs_spacers: bool = True
 
 

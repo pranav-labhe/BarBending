@@ -865,10 +865,10 @@
       ["4213", "4214", "2490", "3500", "2550", "1240", "719"].includes(t.text)
     );
     const cf3Segments = [
-      { label: "LONG LOWER 1", span: 6643, cut_span: 6530, dist_formula: "(2550-50)/125", cut_formula: "635+6530+650-(2*12)" },
-      { label: "LONG LOWER 2", span: 3500, cut_span: 3385, dist_formula: "(2490-50)/125", cut_formula: "635+3385+635-(2*12)" },
-      { label: "SHORT UPPER 1", span: 5040, cut_span: 4925, dist_formula: "(3500-12-100)/125", cut_formula: "635+4925+635-(2*12)" },
-      { label: "SHORT UPPER 2", span: 2550, cut_span: 2435, dist_formula: "(1240+719-100-12)/125", cut_formula: "635+2435+635-(2*12)" },
+      { label: "LONG LOWER 1", span: 6643, dist: 2550, cut_span: 6530, dist_formula: "(2550-50)/125", cut_formula: "635+6530+650-(2*12)" },
+      { label: "LONG LOWER 2", span: 3500, dist: 2490, cut_span: 3385, dist_formula: "(2490-50)/125", cut_formula: "635+3385+635-(2*12)" },
+      { label: "SHORT UPPER 1", span: 5040, dist: 3500, cut_span: 4925, dist_formula: "(3500-12-100)/125", cut_formula: "635+4925+635-(2*12)" },
+      { label: "SHORT UPPER 2", span: 2550, dist: 1959, cut_span: 2435, dist_formula: "(1240+719-100-12)/125", cut_formula: "635+2435+635-(2*12)" },
     ];
 
     for (const row of schedule) {

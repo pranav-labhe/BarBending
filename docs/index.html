@@ -837,6 +837,126 @@
       padding: 26px 14px;
       color: var(--muted);
     }
+    .const-drawer {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+    .const-drawer summary {
+      cursor: pointer;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--primary);
+      user-select: none;
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .const-drawer summary::-webkit-details-marker { display: none; }
+    .const-drawer .settings-bar { margin-top: 10px; }
+    .cell-fx {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 4px;
+    }
+    .fx-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1px 5px;
+      min-width: 22px;
+      height: 18px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      font-style: italic;
+      font-weight: 700;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--surface-subtle);
+      color: var(--primary);
+      box-shadow: none;
+      flex-shrink: 0;
+      opacity: 0.72;
+    }
+    .fx-btn:hover, .fx-btn:focus-visible, .fx-btn.active {
+      opacity: 1;
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .fx-btn.manual {
+      color: var(--muted);
+      font-style: normal;
+      opacity: 0.55;
+    }
+    table:not(.show-params) .col-param { display: none; }
+    .col-param { background: rgba(37, 99, 235, 0.03); }
+    .formula-popover {
+      position: fixed;
+      z-index: 85;
+      width: min(440px, calc(100vw - 24px));
+      background: var(--surface-elevated);
+      color: var(--ink);
+      border: 1px solid var(--border-strong);
+      border-top: 3px solid var(--primary);
+      border-radius: var(--radius-md);
+      padding: 11px 13px;
+      box-shadow: 0 18px 40px -12px rgba(15, 23, 42, 0.35), 0 2px 6px rgba(15, 23, 42, 0.14);
+      font-size: 12px;
+      pointer-events: auto;
+    }
+    .fp-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .fp-title { font-weight: 700; font-size: 12.5px; color: var(--ink); }
+    .fp-cell-tag {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .fp-row { margin-bottom: 7px; }
+    .fp-row:last-child { margin-bottom: 0; }
+    .fp-lbl {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .fp-code {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+    .fp-result {
+      font-weight: 700;
+      color: var(--export);
+    }
+    .fp-meta {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
     .hidden { display: none !important; }
 
     @media (max-width: 1120px) {
@@ -979,32 +1099,86 @@
           <input type="text" id="metaStructure" />
         </div>
         <div class="field">
-          <label for="setFootCov">Footing Cover (mm)</label>
-          <input type="number" id="setFootCov" />
+          <label for="setFootCov">Foot Cover ($S$2 mm)</label>
+          <input type="number" step="any" id="setFootCov" class="const-input" />
         </div>
         <div class="field">
-          <label for="setColCov">Col Cover (mm)</label>
-          <input type="number" id="setColCov" />
+          <label for="setColCov">Col Cover ($U$2 mm)</label>
+          <input type="number" step="any" id="setColCov" class="const-input" />
         </div>
         <div class="field">
-          <label for="setColHt">Col Height (mm)</label>
-          <input type="number" id="setColHt" />
+          <label for="setColHt">Col Height ($W$2 mm)</label>
+          <input type="number" step="any" id="setColHt" class="const-input" />
         </div>
         <div class="field">
           <label for="setMode">Rule Mode</label>
-          <select id="setMode">
+          <select id="setMode" class="const-input">
             <option value="sample_compat">Sample-Compatible</option>
             <option value="strict_geometry">Strict Geometry</option>
           </select>
         </div>
         <div class="field">
           <label for="setRoundUp">Round Up</label>
-          <select id="setRoundUp">
-            <option value="false">Exact</option>
+          <select id="setRoundUp" class="const-input">
+            <option value="false">Exact (No Roundoff)</option>
             <option value="true">ROUNDUP</option>
           </select>
         </div>
       </div>
+
+      <details class="const-drawer">
+        <summary>▸ All Sheet Constants ($P$3, $O$4, $Q$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
+        <div class="settings-bar">
+          <div class="field">
+            <label for="setLdVert">Vert. Ld ($Y$2 mm)</label>
+            <input type="number" step="any" id="setLdVert" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setHookMult">Hook Mult ($S$3 ×D)</label>
+            <input type="number" step="any" id="setHookMult" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setMinHook">Min Hook ($U$3 mm)</label>
+            <input type="number" step="any" id="setMinHook" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setUnitWt">Unit Wt Div ($W$3)</label>
+            <input type="number" step="any" id="setUnitWt" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setScaleDiv">Scale mm/kg ($Y$3)</label>
+            <input type="number" step="any" id="setScaleDiv" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setSwDowel">SW Dowel ($P$3 mm)</label>
+            <input type="number" step="any" id="setSwDowel" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setSwOff">SW Inner Off ($O$4)</label>
+            <input type="number" step="any" id="setSwOff" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCompatHt">Compat Tie Ht ($Q$4)</label>
+            <input type="number" step="any" id="setCompatHt" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCf1Ht">CF1 SW Ht ($S$4 mm)</label>
+            <input type="number" step="any" id="setCf1Ht" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setCf2Ht">CF2 SW Ht ($U$4 mm)</label>
+            <input type="number" step="any" id="setCf2Ht" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setTieDiv16">Tie Div ≥16 ($W$4)</label>
+            <input type="number" step="any" id="setTieDiv16" class="const-input" />
+          </div>
+          <div class="field">
+            <label for="setTieDivLt16">Tie Div &lt;16 ($Y$4)</label>
+            <input type="number" step="any" id="setTieDivLt16" class="const-input" />
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
@@ -1040,6 +1214,7 @@
               <button type="button" id="filterAllBtn" class="seg-btn active">All</button>
               <button type="button" id="filterVerifyBtn" class="seg-btn">Verify Only (<span id="verifyCountLabel">0</span>)</button>
             </div>
+            <button type="button" id="toggleParamsBtn" title="Show/edit Excel Reference Constant columns Z:AD">Show Z:AD Constants</button>
           </div>
         </div>
 
@@ -1064,7 +1239,7 @@
         </div>
 
         <div class="table-wrap">
-          <table>
+          <table id="bbsTable">
             <thead>
               <tr>
                 <th>Sr</th>
@@ -1080,6 +1255,11 @@
                 <th>Cut Len (mm)</th>
                 <th>Weight (kg)</th>
                 <th>Remark</th>
+                <th class="col-param">Depth/B (Z)</th>
+                <th class="col-param">Width/Dist (AA)</th>
+                <th class="col-param">Off/Adj (AB)</th>
+                <th class="col-param">Qty (AC)</th>
+                <th class="col-param">Layers/C (AD)</th>
                 <th></th>
               </tr>
             </thead>
@@ -1094,6 +1274,8 @@
     </div>
   </section>
 </main>
+
+<div id="formulaPopover" class="formula-popover hidden" role="tooltip"></div>
 
 <script src="./vendor/pdf.min.js"></script>
 <script src="./vendor/jszip.min.js"></script>

@@ -1,5 +1,6 @@
 /**
- * Pure-JS OpenXML .xlsx generator with live Excel formulas, cached values (for iOS QuickLook/Numbers),
+ * Pure-JS OpenXML .xlsx generator with global constant cells ($R$2:$Y$4, $P$3, $O$4, $Q$4),
+ * row reference constants (Z..AE), live unrounded column formulas, cached values,
  * and native DrawingML vector rebar shapes in columns F:I via JSZip.
  */
 (function (global) {
@@ -7,11 +8,12 @@
 
   const DIAMETER_COLUMNS = [8, 10, 12, 16, 20, 25, 32, 36, 40];
   const COL_WIDTHS = {
-    1: 13.2, 2: 16.5, 3: 35.7, 4: 12.0, 5: 9.5,
+    1: 13.2, 2: 16.5, 3: 35.7, 4: 13.5, 5: 9.5,
     6: 7.8, 7: 7.8, 8: 9.0, 9: 9.3, 10: 15.2,
-    11: 12.0, 12: 33.0, 13: 13.5, 14: 13.8, 15: 15.7,
-    16: 21.3, 17: 14.5, 18: 15.7, 19: 15.0, 20: 16.7,
-    21: 12.7, 22: 12.7, 23: 12.7, 24: 12.7, 25: 26.3,
+    11: 14.5, 12: 33.0, 13: 15.0, 14: 15.0, 15: 15.7,
+    16: 21.3, 17: 15.5, 18: 16.5, 19: 15.5, 20: 17.0,
+    21: 14.0, 22: 14.5, 23: 14.0, 24: 14.5, 25: 26.3,
+    26: 15.5, 27: 16.5, 28: 15.5, 29: 14.5, 30: 15.5, 31: 42.0,
   };
 
   function xmlEsc(str) {
@@ -34,65 +36,57 @@
     return s;
   }
 
-  function resolveFormula(expr, excelRow, firstTieRow) {
-    if (!expr || !String(expr).startsWith("=")) return null;
-    let out = String(expr).slice(1); // strip leading '=' for OpenXML <f>
-    out = out.replace(/SELF_SPAN/g, `D${excelRow}`);
-    out = out.replace(/PREV_SPAN/g, `D${excelRow - 1}`);
-    out = out.replace(/PREV_CUT/g, `N${excelRow - 1}`);
-    if (out.includes("FIRST_TIE_NOS")) {
-      const target = firstTieRow !== null && firstTieRow !== undefined ? firstTieRow : excelRow - 1;
-      out = out.replace(/FIRST_TIE_NOS/g, `K${target}`);
-    }
-    if (out.includes("PREV_TIE")) {
-      out = out.replace(/PREV_TIE/g, `D${excelRow - 1}`);
-    }
-    return out;
-  }
-
   function buildStylesXml() {
-    // Style indices (cellXfs):
-    // 0: default
-    // 1: Banner Title (24pt bold, center, #D9E1F2 fill, header border)
-    // 2: Meta Label (18pt bold, left, cell border)
-    // 3: Meta Value (16pt bold, left, cell border)
-    // 4: Header (18pt bold, center, wrap, #EDF2F8 fill, header border)
-    // 5: Sub-banner Row 7 (16pt bold, left, cell border)
-    // 6: Body Center (14pt, center, cell border)
-    // 7: Body Left (14pt, left, cell border)
-    // 8: Body Desc Bold Left (14pt bold, left, cell border)
-    // 9: Body Int Center (14pt, center, fmt 0, cell border)
-    // 10: Body Weight Center (14pt, center, fmt weight, cell border)
-    // 11: Inferred Int Center (14pt, center, fmt 0, #FFF9DB fill, cell border)
-    // 12: Sum Row Label (14pt bold, center, header border)
-    // 13: Sum Row Weight (14pt bold, center, fmt weight, header border)
-    // 14: Grand Total Label (18pt bold, right, header border)
-    // 15: Grand Total Value Green (18pt bold, center, fmt 0.000, #92D050 fill, header border)
-    // 16: Footer Note (11pt bold red, left, wrap)
-    // 17: Meta Date (16pt bold, left, yyyy-mm-dd, cell border)
+    // Style indices (cellXfs) using numFmtId=0 (General) so Excel displays exact unrounded decimals:
+    //  0: default
+    //  1: Banner Title (24pt bold, center, #D9E1F2 fill, header border)
+    //  2: Meta Label (18pt bold, left, cell border)
+    //  3: Meta Value (16pt bold, left, cell border)
+    //  4: Header (18pt bold, center, wrap, #EDF2F8 fill, header border)
+    //  5: Sub-banner Row 7 (16pt bold, left, cell border)
+    //  6: Body Center (14pt General)
+    //  7: Body Left (14pt)
+    //  8: Body Bold Left (14pt bold)
+    //  9: Body Center Bordered (General)
+    // 10: Inferred Highlight (General, #FFF9DB)
+    // 11: Sum Row Label (14pt bold, center, header border)
+    // 12: Sum Row Number (14pt bold, General, header border)
+    // 13: Grand Label (18pt bold, right, header border)
+    // 14: Grand Value (18pt bold, General, #92D050, header border)
+    // 15: Footer Note (11pt bold red, left, wrap)
+    // 16: Date formula yyyy-mm-dd
+    // 17: Constant Label (11pt bold navy, #EEF2FF fill, wrap)
+    // 18: Constant Value (13pt bold dark, #E0F2FE fill, center, General)
+    // 19: Param Header Z..AE (11pt bold slate, #F1F5F9 fill, wrap, header border)
+    // 20: Param Value Z..AD (11pt slate, center, General, thin border)
+    // 21: Param Basis AE (11pt slate, left, thin border)
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <numFmts count="3">
-    <numFmt numFmtId="164" formatCode="_-* #,##0.000_-;\\-* #,##0.000_-;_-* &quot;-&quot;_-;_-@_-"/>
-    <numFmt numFmtId="165" formatCode="#,##0.000_ ;\\-#,##0.000\\ "/>
-    <numFmt numFmtId="166" formatCode="yyyy-mm-dd"/>
+  <numFmts count="1">
+    <numFmt numFmtId="166" formatCode="yyyy\\-mm\\-dd"/>
   </numFmts>
-  <fonts count="7">
-    <font><sz val="11"/><name val="Calibri Light"/></font>
+  <fonts count="10">
+    <font><sz val="11"/><color theme="1"/><name val="Calibri"/></font>
     <font><b/><sz val="24"/><name val="Calibri Light"/></font>
     <font><b/><sz val="18"/><name val="Calibri Light"/></font>
     <font><b/><sz val="16"/><name val="Calibri Light"/></font>
     <font><sz val="14"/><name val="Calibri Light"/></font>
     <font><b/><sz val="14"/><name val="Calibri Light"/></font>
     <font><b/><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FF1E3A8A"/><name val="Calibri"/></font>
+    <font><b/><sz val="13"/><color rgb="FF0F172A"/><name val="Calibri"/></font>
+    <font><sz val="11"/><color rgb="FF334155"/><name val="Calibri"/></font>
   </fonts>
-  <fills count="6">
+  <fills count="9">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFEDF2F8"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF92D050"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFF9DB"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFEEF2FF"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE0F2FE"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/></patternFill></fill>
   </fills>
   <borders count="3">
     <border><left/><right/><top/><bottom/><diagonal/></border>
@@ -110,7 +104,7 @@
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="18">
+  <cellXfs count="22">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
@@ -120,15 +114,19 @@
     <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
     <xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
-    <xf numFmtId="1" fontId="4" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="164" fontId="4" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="1" fontId="4" fillId="5" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="5" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-    <xf numFmtId="164" fontId="5" fillId="0" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
-    <xf numFmtId="165" fontId="2" fillId="4" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="166" fontId="3" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="7" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="8" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="7" fillId="8" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="9" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="9" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -146,8 +144,14 @@
   }
 
   function cellFormula(ref, formula, cachedVal, styleIdx) {
+    const clean = String(formula).startsWith("=") ? String(formula).slice(1) : String(formula);
     const vTag = cachedVal !== null && cachedVal !== undefined ? `<v>${Number(cachedVal)}</v>` : "";
-    return `<c r="${ref}" s="${styleIdx}"><f>${xmlEsc(formula)}</f>${vTag}</c>`;
+    return `<c r="${ref}" s="${styleIdx}"><f>${xmlEsc(clean)}</f>${vTag}</c>`;
+  }
+
+  function cellStrFormula(ref, formula, cachedStr, styleIdx) {
+    const clean = String(formula).startsWith("=") ? String(formula).slice(1) : String(formula);
+    return `<c r="${ref}" s="${styleIdx}" t="str"><f>${xmlEsc(clean)}</f><v>${xmlEsc(cachedStr)}</v></c>`;
   }
 
   function buildDrawingXml(rowShapes) {
@@ -288,17 +292,26 @@
 
   async function exportBbsXlsxBlob(rawDoc) {
     const doc = BbsCalculator.recalculateDocument(JSON.parse(JSON.stringify(rawDoc)));
+    const st = doc.settings;
     const rowsXml = [];
     const merges = [
       "A1:Y1",
-      "A2:B2", "C2:I2", "J2:K2", "L2:Q2", "R2:Y4",
-      "A3:B3", "C3:I3", "J3:K3", "L3:N3",
-      "A4:B4", "C4:I4",
-      "F5:I6", "P5:X5",
+      "A2:B2", "C2:I2", "J2:K2", "L2:Q2",
+      "A3:B3", "C3:I3", "J3:K3", "L3:N3", "P3:Q3",
+      "A4:B4", "C4:I4", "J4:K4", "L4:M4",
+      "F5:I6", "P5:X5", "Z5:AE5",
       "A5:A6", "B5:B6", "C5:C6", "D5:D6", "E5:E6",
       "J5:J6", "K5:K6", "L5:L6", "M5:M6", "N5:N6", "O5:O6", "Y5:Y6",
       "A7:Y7",
     ];
+
+    const dataStartRow = 8;
+    const lastDataRow = dataStartRow + Math.max(0, doc.rows.length - 1);
+    const spacerRow = lastDataRow + 1;
+    const sumRow = spacerRow + 1;
+    const lblRow = sumRow + 1;
+    const grandRow = lblRow + 1;
+    const noteRow = grandRow + 1;
 
     function makeRow(rIdx, ht, cellsXml) {
       return `<row r="${rIdx}" ht="${ht}" customHeight="1">${cellsXml.join("")}</row>`;
@@ -310,7 +323,22 @@
       for (let c = 2; c <= 25; c++) cs.push(cellStr(`${colLetter(c)}1`, "", 1));
       rowsXml.push(makeRow(1, 49.9, cs));
     }
-    // Row 2: Project & Drawing
+
+    const r2Const = { 18: ["Foot Cover", st.footing_cover_mm], 20: ["Col Cover", st.column_cover_mm], 22: ["Col Height", st.column_height_mm], 24: ["Vert. Ld", st.ld_vertical_mm] };
+    const r3Const = { 15: ["SW Dowel", st.sw_dowel_mm], 18: ["Hook Mult", st.hook_mult], 20: ["Min Hook", st.hook_min_mm], 22: ["Unit Wt Div", st.unit_wt_divisor], 24: ["Kg/MT Scale", st.scale_divisor] };
+    const r4Const = { 14: ["SW Inner Off", st.sw_inner_offset_mm], 16: ["Tie Compat Ht", st.compat_tie_ht_mm], 18: ["CF1 SW Ht", st.shear_wall_ht_cf1_mm], 20: ["CF2 SW Ht", st.shear_wall_ht_cf2_mm], 22: ["Tie Div (>=16)", st.tie_step_div_ge16], 24: ["Tie Div (<16)", st.tie_step_div_lt16] };
+
+    function pushConstCells(rIdx, cs, map) {
+      for (let c = 1; c <= 25; c++) {
+        if (map[c]) {
+          cs.push(cellStr(`${colLetter(c)}${rIdx}`, map[c][0], 17));
+        } else if (map[c - 1]) {
+          cs.push(cellNum(`${colLetter(c)}${rIdx}`, map[c - 1][1], 18));
+        }
+      }
+    }
+
+    // Row 2: Project, Drawing No & Global Constants
     {
       const cs = [];
       for (let c = 1; c <= 25; c++) {
@@ -319,11 +347,13 @@
         else if (c === 3) cs.push(cellStr(ref, doc.project_name, 3));
         else if (c === 10) cs.push(cellStr(ref, "Drawing No:- ", 2));
         else if (c === 12) cs.push(cellStr(ref, doc.drawing_no, 3));
-        else cs.push(cellStr(ref, "", c === 10 || c === 11 ? 2 : 3));
+        else if (c < 18) cs.push(cellStr(ref, "", c === 10 || c === 11 ? 2 : 3));
       }
+      pushConstCells(2, cs, r2Const);
       rowsXml.push(makeRow(2, 38.45, cs));
     }
-    // Row 3: Location & Date
+
+    // Row 3: Location, Date & Global Constants
     {
       const cs = [];
       for (let c = 1; c <= 25; c++) {
@@ -333,38 +363,74 @@
         else if (c === 10) cs.push(cellStr(ref, "Date  ", 2));
         else if (c === 12) {
           if (doc.date_str) cs.push(cellStr(ref, doc.date_str, 3));
-          else cs.push(`<c r="${ref}" s="17"><f>+TODAY()</f></c>`);
-        } else cs.push(cellStr(ref, "", c === 10 || c === 11 ? 2 : 3));
+          else cs.push(`<c r="${ref}" s="16"><f>+TODAY()</f></c>`);
+        } else if (c === 15) cs.push(cellStr(ref, "SW Dowel", 17));
+        else if (c === 16) cs.push(cellNum(ref, st.sw_dowel_mm, 18));
+        else if (c === 17) cs.push(cellStr(ref, "", 18));
+        else if (c < 18) cs.push(cellStr(ref, "", c === 10 || c === 11 ? 2 : 3));
+      }
+      for (let c = 18; c <= 25; c++) {
+        if (r3Const[c]) cs.push(cellStr(`${colLetter(c)}3`, r3Const[c][0], 17));
+        else if (r3Const[c - 1]) cs.push(cellNum(`${colLetter(c)}3`, r3Const[c - 1][1], 18));
       }
       rowsXml.push(makeRow(3, 38.45, cs));
     }
-    // Row 4: Structure
+
+    // Row 4: Structure, Mode & Global Constants
     {
       const cs = [];
+      const modeStr = `${st.mode}${st.round_up_nos ? " (ROUNDUP)" : " (EXACT)"}`;
       for (let c = 1; c <= 25; c++) {
         const ref = `${colLetter(c)}4`;
         if (c === 1) cs.push(cellStr(ref, "Structure :", 2));
         else if (c === 3) cs.push(cellStr(ref, doc.structure, 3));
+        else if (c === 10) cs.push(cellStr(ref, "Rule Mode", 2));
+        else if (c === 12) cs.push(cellStr(ref, modeStr, 3));
+        else if (c === 13) cs.push(cellStr(ref, "", 3));
+        else if (r4Const[c]) cs.push(cellStr(ref, r4Const[c][0], 17));
+        else if (r4Const[c - 1]) cs.push(cellNum(ref, r4Const[c - 1][1], 18));
         else cs.push(cellStr(ref, "", c === 10 || c === 11 ? 2 : 3));
       }
       rowsXml.push(makeRow(4, 38.45, cs));
     }
-    // Rows 5 & 6: Headers
-    const h5 = {
-      1: "Sr.No", 2: "Bar Mark", 3: "Description", 4: "Span", 5: "Dia.", 6: "Shape",
-      10: "Spacing", 11: "Nos.", 12: "MULTIPLE NO.", 13: "Total nos", 14: "Cut Length",
-      15: "Coupler", 16: `Total WT. IN KG. (${Math.round(doc.total_weight_mt * 1000)})`, 25: "Remark",
-    };
+
+    // Rows 5 & 6: Main Headers + Parameter Headers Z..AE
     {
+      const totalKgExact = BbsCalculator.formatExact(doc.total_weight_mt * Number(st.scale_divisor || 1000));
+      const h5 = {
+        1: "Sr.No", 2: "Bar Mark", 3: "Description", 4: "Span", 5: "Dia.", 6: "Shape",
+        10: "Spacing", 11: "Nos.", 12: "MULTIPLE NO.", 13: "Total nos", 14: "Cut Length",
+        15: "Coupler", 25: "Remark",
+        26: "ROW REFERENCE CONSTANTS (EXCEL FORMULA INPUTS — EXCLUDED FROM A3 PRINT)",
+      };
+      const paramSub = {
+        26: "Param Z\n(Depth / B)",
+        27: "Param AA\n(Width / Dist)",
+        28: "Param AB\n(Offset / Adj)",
+        29: "Param AC\n(Qty / Units)",
+        30: "Param AD\n(Layers / Const)",
+        31: "Param AE\n(Formula Basis)",
+      };
       const cs5 = [], cs6 = [];
-      for (let c = 1; c <= 25; c++) {
-        cs5.push(cellStr(`${colLetter(c)}5`, h5[c] || "", 4));
-        if (c >= 16 && c <= 24) cs6.push(cellNum(`${colLetter(c)}6`, DIAMETER_COLUMNS[c - 16], 4));
-        else cs6.push(cellStr(`${colLetter(c)}6`, "", 4));
+      for (let c = 1; c <= 31; c++) {
+        const ref5 = `${colLetter(c)}5`;
+        const ref6 = `${colLetter(c)}6`;
+        if (c === 16) {
+          cs5.push(cellStrFormula(ref5, `"Total WT. IN KG. ("&(P${grandRow}*$Y$3)&")"`, `Total WT. IN KG. (${totalKgExact})`, 4));
+        } else if (c <= 25) {
+          cs5.push(cellStr(ref5, h5[c] || "", 4));
+        } else {
+          cs5.push(cellStr(ref5, h5[c] || "", 19));
+        }
+
+        if (c >= 16 && c <= 24) cs6.push(cellNum(ref6, DIAMETER_COLUMNS[c - 16], 4));
+        else if (c <= 25) cs6.push(cellStr(ref6, "", 4));
+        else cs6.push(cellStr(ref6, paramSub[c] || "", 19));
       }
       rowsXml.push(makeRow(5, 38.25, cs5));
       rowsXml.push(makeRow(6, 38.45, cs6));
     }
+
     // Row 7
     {
       const cs = [cellStr("A7", "Structure Name", 5)];
@@ -373,13 +439,12 @@
     }
 
     // Data rows starting at 8
-    const dataStartRow = 8;
     let curRow = dataStartRow;
     const firstTieRowByGroup = {};
     let curSrStart = null;
     const shapeRows = [];
 
-    for (const row of doc.rows) {
+    doc.rows.forEach((row, idx) => {
       const isTall = ["stirrup_rect", "center_link", "combined_loop", "chair"].includes(
         (row.shape && row.shape.kind) || ""
       );
@@ -395,100 +460,87 @@
       if (String(row.description || "").includes("COL.TIES") && !(row.group_key in firstTieRowByGroup)) {
         firstTieRowByGroup[row.group_key] = curRow;
       }
-      const firstTieR = firstTieRowByGroup[row.group_key];
+      const firstTieR = firstTieRowByGroup[row.group_key] ?? null;
 
       const cs = [];
-      // Col 1: Sr.No
       if (row.sr_no !== null && row.sr_no !== undefined) cs.push(cellNum(`A${curRow}`, row.sr_no, 6));
       else cs.push(cellStr(`A${curRow}`, "", 6));
 
-      // Col 2 & 3
       cs.push(cellStr(`B${curRow}`, row.bar_mark, 7));
       cs.push(cellStr(`C${curRow}`, row.description, 8));
 
-      // Col 4: Span
-      const spanF = resolveFormula(row.span_expr, curRow, firstTieR);
-      const spanStyle = row.inferred ? 11 : 6;
-      if (spanF) cs.push(cellFormula(`D${curRow}`, spanF, row.span_mm, spanStyle));
-      else if (row.span_mm > 0) cs.push(cellNum(`D${curRow}`, row.span_mm, spanStyle));
-      else cs.push(cellStr(`D${curRow}`, "", spanStyle));
+      const infStyle = row.inferred ? 10 : 6;
+      const spanRes = BbsCalculator.resolveRowFormula(row.span_expr, idx, doc.rows, st, firstTieR);
+      if (spanRes) cs.push(cellFormula(`D${curRow}`, spanRes.excelFormula, row.span_mm, infStyle));
+      else if (row.span_mm > 0) cs.push(cellNum(`D${curRow}`, row.span_mm, infStyle));
+      else cs.push(cellStr(`D${curRow}`, "", infStyle));
 
-      // Col 5: Dia
       cs.push(cellNum(`E${curRow}`, row.dia_mm, 6));
-
-      // Cols 6..9: Shape cells
       for (let c = 6; c <= 9; c++) cs.push(cellStr(`${colLetter(c)}${curRow}`, "", 6));
 
-      // Col 10: Spacing
       if (row.spacing_mm !== null && row.spacing_mm !== undefined && row.spacing_mm > 0) {
         cs.push(cellNum(`J${curRow}`, row.spacing_mm, 6));
       } else {
         cs.push(cellStr(`J${curRow}`, "", 6));
       }
 
-      // Col 11: Nos
       const isSpecialEmpty = ["CHAIRS", "SPACERS"].includes(row.group_key) && Number(row.nos) === 0;
-      const nosF = resolveFormula(row.nos_expr, curRow, firstTieR);
-      const nosStyle = row.inferred ? 11 : 6;
-      if (nosF) cs.push(cellFormula(`K${curRow}`, nosF, row.nos, nosStyle));
-      else if (!isSpecialEmpty) cs.push(cellNum(`K${curRow}`, row.nos, nosStyle));
-      else cs.push(cellStr(`K${curRow}`, "", nosStyle));
+      const nosRes = BbsCalculator.resolveRowFormula(row.nos_expr, idx, doc.rows, st, firstTieR);
+      if (nosRes) cs.push(cellFormula(`K${curRow}`, nosRes.excelFormula, row.nos, infStyle));
+      else if (!isSpecialEmpty) cs.push(cellNum(`K${curRow}`, row.nos, infStyle));
+      else cs.push(cellStr(`K${curRow}`, "", infStyle));
 
-      // Col 12: Multiple No
-      const multStyle = row.inferred ? 11 : 6;
-      if (!isSpecialEmpty) cs.push(cellNum(`L${curRow}`, row.multiple_no, multStyle));
-      else cs.push(cellStr(`L${curRow}`, "", multStyle));
+      const multRes = BbsCalculator.resolveRowFormula(row.multiple_expr, idx, doc.rows, st, firstTieR);
+      if (multRes) cs.push(cellFormula(`L${curRow}`, multRes.excelFormula, row.multiple_no, infStyle));
+      else if (!isSpecialEmpty) cs.push(cellNum(`L${curRow}`, row.multiple_no, infStyle));
+      else cs.push(cellStr(`L${curRow}`, "", infStyle));
 
-      // Col 13: Total Nos
       if (!isSpecialEmpty) cs.push(cellFormula(`M${curRow}`, `+L${curRow}*K${curRow}`, row.total_nos, 9));
       else cs.push(cellStr(`M${curRow}`, "", 9));
 
-      // Col 14: Cut Length
-      const cutF = resolveFormula(row.cut_length_expr, curRow, firstTieR);
-      const cutStyle = row.inferred ? 11 : 9;
-      if (cutF) cs.push(cellFormula(`N${curRow}`, cutF, row.cut_length_mm, cutStyle));
+      const cutStyle = row.inferred ? 10 : 9;
+      const cutRes = BbsCalculator.resolveRowFormula(row.cut_length_expr, idx, doc.rows, st, firstTieR);
+      if (cutRes) cs.push(cellFormula(`N${curRow}`, cutRes.excelFormula, row.cut_length_mm, cutStyle));
       else cs.push(cellNum(`N${curRow}`, row.cut_length_mm, cutStyle));
 
-      // Col 15: Coupler
       if (!isSpecialEmpty) cs.push(cellNum(`O${curRow}`, row.coupler || 0, 6));
       else cs.push(cellStr(`O${curRow}`, "", 6));
 
-      // Cols 16..24: Dia-wise weights
-      for (let idx = 0; idx < DIAMETER_COLUMNS.length; idx++) {
-        const colC = 16 + idx;
+      for (let dIdx = 0; dIdx < DIAMETER_COLUMNS.length; dIdx++) {
+        const colC = 16 + dIdx;
         const letCol = colLetter(colC);
         const ref = `${letCol}${curRow}`;
-        const cached = DIAMETER_COLUMNS[idx] === Number(row.dia_mm) ? row.weight_kg : 0;
+        const cached = Math.abs(DIAMETER_COLUMNS[dIdx] - Number(row.dia_mm)) < 1e-9 ? row.weight_kg : 0;
         if (isSpecialEmpty) {
-          if (cached > 0) cs.push(cellNum(ref, cached, 10));
-          else cs.push(cellStr(ref, "", 10));
+          if (cached > 0) cs.push(cellNum(ref, cached, 9));
+          else cs.push(cellStr(ref, "", 9));
         } else {
-          const f = `IF($E${curRow}=${letCol}$6,$M${curRow},0)*($N${curRow}*$E${curRow}*$E${curRow}/(162*1000))`;
-          cs.push(cellFormula(ref, f, cached, 10));
+          const f = `IF($E${curRow}=${letCol}$6,$M${curRow},0)*($N${curRow}*$E${curRow}*$E${curRow}/($W$3*$Y$3))`;
+          cs.push(cellFormula(ref, f, cached, 9));
         }
       }
 
-      // Col 25: Remark
       cs.push(cellStr(`Y${curRow}`, row.remark || "", 7));
+
+      // Row Reference Constants (Z..AE)
+      const params = [row.param_z, row.param_aa, row.param_ab, row.param_ac, row.param_ad];
+      params.forEach((pv, pIdx) => {
+        const pRef = `${colLetter(26 + pIdx)}${curRow}`;
+        if (pv !== null && pv !== undefined) cs.push(cellNum(pRef, pv, 20));
+        else cs.push(cellStr(pRef, "", 20));
+      });
+      cs.push(cellStr(`AE${curRow}`, row.param_ae || "", 21));
 
       rowsXml.push(makeRow(curRow, ht, cs));
       if (row.shape && row.shape.kind) shapeRows.push([curRow, row.shape]);
       curRow++;
-    }
+    });
 
     if (curSrStart !== null && curRow - 1 > curSrStart) {
       merges.push(`A${curSrStart}:A${curRow - 1}`);
     }
 
-    const lastDataRow = curRow - 1;
-    const spacerRow = lastDataRow + 1;
-    const sumRow = lastDataRow + 2;
-    const lblRow = lastDataRow + 3;
-    const grandRow = lastDataRow + 4;
-    const noteRow = lastDataRow + 5;
-
     rowsXml.push(makeRow(spacerRow, 24.0, []));
-
     merges.push(`A${sumRow}:C${sumRow}`);
     merges.push(`A${grandRow}:O${grandRow}`);
     merges.push(`P${grandRow}:X${grandRow}`);
@@ -500,12 +552,12 @@
       for (let c = 1; c <= 25; c++) {
         const letCol = colLetter(c);
         const ref = `${letCol}${sumRow}`;
-        if (c === 1) cs.push(cellStr(ref, "Total Weight (MT)", 12));
+        if (c === 1) cs.push(cellStr(ref, "Total Weight (MT)", 11));
         else if (c >= 16 && c <= 24) {
           const dia = DIAMETER_COLUMNS[c - 16];
           const mtVal = (doc.totals_by_dia_mt && doc.totals_by_dia_mt[dia]) || 0;
-          cs.push(cellFormula(ref, `SUM(${letCol}${dataStartRow}:${letCol}${lastDataRow})/1000`, mtVal, 13));
-        } else cs.push(cellStr(ref, "", 12));
+          cs.push(cellFormula(ref, `SUM(${letCol}${dataStartRow}:${letCol}${lastDataRow})/$Y$3`, mtVal, 12));
+        } else cs.push(cellStr(ref, "", 11));
       }
       rowsXml.push(makeRow(sumRow, 48.0, cs));
     }
@@ -528,23 +580,22 @@
       const cs = [];
       for (let c = 1; c <= 25; c++) {
         const ref = `${colLetter(c)}${grandRow}`;
-        if (c === 1) cs.push(cellStr(ref, "Total Weight (MT)", 14));
-        else if (c === 16) cs.push(cellFormula(ref, `SUM(P${sumRow}:X${sumRow})`, doc.total_weight_mt, 15));
-        else cs.push(cellStr(ref, "", c >= 16 && c <= 24 ? 15 : 14));
+        if (c === 1) cs.push(cellStr(ref, "Total Weight (MT)", 13));
+        else if (c === 16) cs.push(cellFormula(ref, `SUM(P${sumRow}:X${sumRow})`, doc.total_weight_mt, 14));
+        else cs.push(cellStr(ref, "", c >= 16 && c <= 24 ? 14 : 13));
       }
       rowsXml.push(makeRow(grandRow, 39.0, cs));
     }
 
     // Note row
     {
-      const cs = [cellStr(`A${noteRow}`, doc.note_footer, 16)];
+      const cs = [cellStr(`A${noteRow}`, doc.note_footer, 15)];
       rowsXml.push(makeRow(noteRow, 28.0, cs));
     }
 
     const colsXml = Object.entries(COL_WIDTHS)
       .map(([idx, w]) => `<col min="${idx}" max="${idx}" width="${w}" customWidth="1"/>`)
       .join("");
-
     const mergesXml = merges.map((m) => `<mergeCell ref="${m}"/>`).join("");
 
     const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -578,6 +629,8 @@
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <workbookPr/>
   <sheets><sheet name="FORMAT" sheetId="1" r:id="rId1"/></sheets>
+  <definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">FORMAT!$A$1:$Y$${noteRow}</definedName></definedNames>
+  <calcPr calcId="191029" fullCalcOnLoad="1"/>
 </workbook>`;
 
     const wbRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

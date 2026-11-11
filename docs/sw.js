@@ -1,4 +1,4 @@
-const CACHE_NAME = "bbs-offline-v2";
+const CACHE_NAME = "bbs-offline-v3";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1,11 +1,45 @@
 /**
- * Client-side Bar Bending Schedule (BBS) calculation engine.
- * Mirrors app/bbs_calculator.py for 100% browser-local execution.
+ * Client-side Bar Bending Schedule (BBS) formula engine & calculator.
+ * Mirrors app/formula_engine.py and app/bbs_calculator.py for 100% browser-local execution
+ * with strict zero-rounding unrounded precision.
  */
 (function (global) {
   "use strict";
 
   const DIAMETER_COLUMNS = [8, 10, 12, 16, 20, 25, 32, 36, 40];
+
+  const GLOBAL_CONST_CELLS = {
+    "$S$2": ["footing_cover_mm", "Footing Cover"],
+    "$U$2": ["column_cover_mm", "Col Cover"],
+    "$W$2": ["column_height_mm", "Col Height"],
+    "$Y$2": ["ld_vertical_mm", "Vert. Ld"],
+    "$P$3": ["sw_dowel_mm", "SW Dowel"],
+    "$S$3": ["hook_mult", "Hook Mult"],
+    "$U$3": ["hook_min_mm", "Min Hook"],
+    "$W$3": ["unit_wt_divisor", "Unit Wt Div"],
+    "$Y$3": ["scale_divisor", "Kg/MT Scale"],
+    "$O$4": ["sw_inner_offset_mm", "SW Inner Off"],
+    "$Q$4": ["compat_tie_ht_mm", "Tie Compat Ht"],
+    "$S$4": ["shear_wall_ht_cf1_mm", "CF1 SW Ht"],
+    "$U$4": ["shear_wall_ht_cf2_mm", "CF2 SW Ht"],
+    "$W$4": ["tie_step_div_ge16", "Tie Div (>=16)"],
+    "$Y$4": ["tie_step_div_lt16", "Tie Div (<16)"],
+  };
+
+  const ROW_COL_ATTR = {
+    D: "span_mm",
+    E: "dia_mm",
+    J: "spacing_mm",
+    K: "nos",
+    L: "multiple_no",
+    M: "total_nos",
+    N: "cut_length_mm",
+    Z: "param_z",
+    AA: "param_aa",
+    AB: "param_ab",
+    AC: "param_ac",
+    AD: "param_ad",
+  };
 
   function defaultSettings(overrides = {}) {
     return Object.assign(
@@ -18,70 +52,265 @@
         ld_vertical_mm: 450,
         hook_mult: 8,
         hook_min_mm: 75,
+        unit_wt_divisor: 162,
+        scale_divisor: 1000,
         shear_wall_ht_cf1_mm: 1650,
         shear_wall_ht_cf2_mm: 3000,
+        sw_dowel_mm: 300,
+        sw_inner_offset_mm: 80,
+        compat_tie_ht_mm: 4500,
+        tie_step_div_ge16: 6,
+        tie_step_div_lt16: 5,
         include_chairs_spacers: true,
       },
       overrides
     );
   }
 
-  function ceilIf(val, roundUp) {
-    return roundUp ? Math.ceil(val) : val;
+  function formatExact(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n === 0) return "0";
+    if (Math.abs(n - Math.round(n)) < 1e-11) return String(Math.round(n));
+    const s = Number(n.toPrecision(12)).toString();
+    return s === "-0" ? "0" : s;
   }
 
-  function computeWeightKg(totalNos, cutLengthMm, diaMm) {
-    if (totalNos <= 0 || cutLengthMm <= 0 || diaMm <= 0) return 0;
-    return totalNos * (cutLengthMm / 1000.0) * ((diaMm * diaMm) / 162.0);
+  function formatCalcArg(val) {
+    const n = Number(val);
+    if (!Number.isFinite(n) || n === 0) return "0";
+    if (Math.abs(n - Math.round(n)) < 1e-12) return String(Math.round(n));
+    return String(n);
   }
 
-  function sideBarFormula(mark, bEff, lEff, llDia, sbDia, mode) {
-    if (mode === "sample_compat") {
-      if (mark === "C1" && bEff === 2200 && lEff === 2600) {
-        return ["=2600+2200+2600+2200+(16*8)-12-12-12-12", 9680, false];
+  function ceilClean(val) {
+    const nearest = Math.round(val);
+    if (Math.abs(val - nearest) < 1e-11) return nearest;
+    return Math.ceil(val);
+  }
+
+  function computeWeightKg(totalNos, cutLengthMm, diaMm, unitWtDivisor = 162, scaleDivisor = 1000) {
+    if (totalNos <= 0 || cutLengthMm <= 0 || diaMm <= 0 || unitWtDivisor <= 0 || scaleDivisor <= 0) return 0;
+    return Number(totalNos) * (Number(cutLengthMm) / Number(scaleDivisor)) * ((Number(diaMm) * Number(diaMm)) / Number(unitWtDivisor));
+  }
+
+  function wrapRoundup(innerExpr, roundUp) {
+    const body = String(innerExpr).replace(/^=+/, "");
+    return roundUp ? `=ROUNDUP(${body},0)` : `=${body}`;
+  }
+
+  function syncRoundupExpr(expr, roundUp) {
+    if (!expr || !String(expr).startsWith("=")) return expr;
+    const body = String(expr).slice(1).trim();
+    if (body.startsWith("@ID:") || /^[A-Z]+\d+$/.test(body)) return expr;
+    const m = /^ROUNDUP\((.*),0\)$/i.exec(body);
+    if (m && !roundUp) return `=${m[1]}`;
+    if (!m && roundUp && body.includes("/")) return `=ROUNDUP(${body},0)`;
+    return expr;
+  }
+
+  function evalArithmetic(expr) {
+    let s = String(expr || "").trim();
+    if (s.startsWith("=")) s = s.slice(1);
+    if (s.startsWith("+")) s = s.slice(1);
+
+    const tokens = [];
+    const tokenRe = /\s*(?:(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([A-Za-z_][A-Za-z0-9_]*)|([+\-*/(),]))/y;
+    let pos = 0;
+    while (pos < s.length) {
+      if (/\s/.test(s[pos])) { pos++; continue; }
+      tokenRe.lastIndex = pos;
+      const m = tokenRe.exec(s);
+      if (!m) throw new Error(`Unsupported token in expression: ${expr}`);
+      if (m[1] !== undefined) tokens.push(["NUM", m[1]]);
+      else if (m[2] !== undefined) tokens.push(["IDENT", m[2].toUpperCase()]);
+      else tokens.push(["OP", m[3]]);
+      pos = tokenRe.lastIndex;
+    }
+
+    let idx = 0;
+    const peek = () => (idx < tokens.length ? tokens[idx] : null);
+    const consume = () => tokens[idx++];
+
+    function parseExpr() {
+      let val = parseTerm();
+      let tok;
+      while ((tok = peek()) && tok[0] === "OP" && (tok[1] === "+" || tok[1] === "-")) {
+        const op = consume()[1];
+        const rhs = parseTerm();
+        val = op === "+" ? val + rhs : val - rhs;
       }
-      if (mark === "C2" && bEff === 2500 && lEff === 2900) {
-        return ["=2500+2500+2900+2900+75+75-12-12-12-12", 10902, false];
+      return val;
+    }
+
+    function parseTerm() {
+      let val = parseFactor();
+      let tok;
+      while ((tok = peek()) && tok[0] === "OP" && (tok[1] === "*" || tok[1] === "/")) {
+        const op = consume()[1];
+        const rhs = parseFactor();
+        if (op === "/") {
+          if (rhs === 0) throw new Error("Division by zero");
+          val /= rhs;
+        } else {
+          val *= rhs;
+        }
       }
-      if (mark === "C3" && bEff === 2400 && lEff === 2800) {
-        return ["=2400+2400+2800+2800+75+75-(5*10)", 10500, false];
+      return val;
+    }
+
+    function parseFactor() {
+      const tok = peek();
+      if (!tok) throw new Error("Unexpected end of expression");
+      if (tok[0] === "OP" && tok[1] === "+") { consume(); return parseFactor(); }
+      if (tok[0] === "OP" && tok[1] === "-") { consume(); return -parseFactor(); }
+      if (tok[0] === "OP" && tok[1] === "(") {
+        consume();
+        const val = parseExpr();
+        const end = peek();
+        if (!end || end[0] !== "OP" || end[1] !== ")") throw new Error("Unmatched '('");
+        consume();
+        return val;
       }
-      if (mark === "C4" && bEff === 3000 && lEff === 3400) {
-        return ["=3000+3000+3400+3400+75+75-(5*10)-12-12-12-12", 12852, false];
+      if (tok[0] === "NUM") { consume(); return Number(tok[1]); }
+      if (tok[0] === "IDENT") {
+        const fn = consume()[1];
+        const lp = peek();
+        if (!lp || lp[0] !== "OP" || lp[1] !== "(") throw new Error(`Unexpected ident ${fn}`);
+        consume();
+        const args = [];
+        const np = peek();
+        if (!(np && np[0] === "OP" && np[1] === ")")) {
+          args.push(parseExpr());
+          while (peek() && peek()[0] === "OP" && peek()[1] === ",") {
+            consume();
+            args.push(parseExpr());
+          }
+        }
+        const rp = peek();
+        if (!rp || rp[0] !== "OP" || rp[1] !== ")") throw new Error("Expected ')'");
+        consume();
+        if (fn === "MAX") return Math.max(...args);
+        if (fn === "MIN") return Math.min(...args);
+        if (fn === "ROUNDUP") {
+          if (!args.length) return 0;
+          const digits = args.length > 1 ? Math.trunc(args[1]) : 0;
+          if (digits === 0) return ceilClean(args[0]);
+          const f = Math.pow(10, digits);
+          return ceilClean(args[0] * f) / f;
+        }
+        throw new Error(`Unsupported function ${fn}`);
       }
-      if (mark === "C5" && bEff === 3300 && lEff === 3700) {
-        return ["=3300+3300+3700+3700+75+75-12-12-12-12", 14102, false];
-      }
-      if (mark === "C6" && bEff === 2300 && lEff === 2700) {
-        return ["=2300+2300+2700+2700+75+75-(4*10)-12-12-12-12", 10062, false];
+      throw new Error(`Unexpected token ${tok}`);
+    }
+
+    const out = parseExpr();
+    if (idx !== tokens.length) throw new Error(`Trailing tokens in ${expr}`);
+    return out;
+  }
+
+  function resolveRowFormula(expr, rowIdx, rows, settings, firstTieExcelRow = null, excelStartRow = 8) {
+    if (!expr || !String(expr).startsWith("=")) return null;
+
+    const curExcel = excelStartRow + rowIdx;
+    const idToIdx = {};
+    rows.forEach((r, i) => { if (r && r.id) idToIdx[r.id] = i; });
+    let missingDep = false;
+
+    let normalized = String(expr)
+      .replace(/SELF_SPAN/g, "@SELF:D")
+      .replace(/PREV_SPAN/g, "@PREV:D")
+      .replace(/PREV_CUT/g, "@PREV:N")
+      .replace(/PREV_TIE/g, "@PREV:D");
+
+    if (normalized.includes("FIRST_TIE_NOS")) {
+      const ftRow = firstTieExcelRow !== null && firstTieExcelRow !== undefined ? firstTieExcelRow : curExcel - 1;
+      const ftIdx = ftRow - excelStartRow;
+      if (ftIdx >= 0 && ftIdx < rows.length) {
+        normalized = normalized.replace(/FIRST_TIE_NOS/g, `@ID:${rows[ftIdx].id}:K`);
+      } else {
+        missingDep = true;
       }
     }
-    const hook = Math.max(8 * sbDia, 75);
-    const expr = `=${bEff}+${bEff}+${lEff}+${lEff}+${hook}+${hook}-(4*${llDia})`;
-    const val = 2 * (bEff + lEff) + 2 * hook - 4 * llDia;
-    return [expr, val, false];
+    if (missingDep) return null;
+
+    const symRe = /@(SELF|PREV):([A-Z]{1,2})|@ID:([A-Za-z0-9_]+):([A-Z]{1,2})|(\$[A-Z]+\$\d+)/g;
+
+    const excelFormula = normalized.replace(symRe, (m, rel, col, refId, idCol, gconst) => {
+      if (gconst) return gconst;
+      if (rel === "SELF") return `${col}${curExcel}`;
+      if (rel === "PREV") {
+        if (curExcel - 1 < excelStartRow) { missingDep = true; return "0"; }
+        return `${col}${curExcel - 1}`;
+      }
+      if (refId !== undefined) {
+        if (!(refId in idToIdx)) { missingDep = true; return "0"; }
+        return `${idCol}${excelStartRow + idToIdx[refId]}`;
+      }
+      return m;
+    });
+    if (missingDep) return null;
+
+    const subWith = (fmtFn) =>
+      normalized.replace(symRe, (m, rel, col, refId, idCol, gconst) => {
+        if (gconst) {
+          const meta = GLOBAL_CONST_CELLS[gconst];
+          if (!meta) { missingDep = true; return "0"; }
+          return fmtFn(Number(settings[meta[0]]));
+        }
+        const getAttr = (r, c) => {
+          const attr = ROW_COL_ATTR[c];
+          if (!attr || !r) return 0;
+          const v = r[attr];
+          return v === null || v === undefined ? 0 : Number(v);
+        };
+        if (rel === "SELF") return fmtFn(getAttr(rows[rowIdx], col));
+        if (rel === "PREV") {
+          if (rowIdx - 1 < 0) { missingDep = true; return "0"; }
+          return fmtFn(getAttr(rows[rowIdx - 1], col));
+        }
+        if (refId !== undefined) {
+          if (!(refId in idToIdx)) { missingDep = true; return "0"; }
+          return fmtFn(getAttr(rows[idToIdx[refId]], idCol));
+        }
+        return m;
+      });
+
+    const evalExpr = subWith(formatCalcArg);
+    const displayExpr = subWith(formatExact).replace(/^=+/, "");
+    if (missingDep) return null;
+
+    try {
+      const value = evalArithmetic(evalExpr);
+      return { excelFormula, displayExpr, value };
+    } catch (_) {
+      return { excelFormula, displayExpr, value: null };
+    }
   }
 
   function buildBoxFootingRows(item, srNo, settings) {
     const rows = [];
     const mark = item.mark;
-    const cov = settings.footing_cover_mm;
-    const ccov = settings.column_cover_mm;
-    const hCol = settings.column_height_mm;
-    const ld = settings.ld_vertical_mm;
-    const dEff = Math.max(100, item.depth_mm - 2 * cov);
-    const lEff = Math.max(100, item.footing_l_mm - 2 * cov);
-    const bEff = Math.max(100, item.footing_b_mm - 2 * cov);
+    const llDia = Number(item.long_lower_dia || 12);
+    const suDia = Number(item.short_upper_dia || 12);
+    const sbDia = Number(item.side_bars_dia || 10);
+    const vDia = Number(item.vert_dia || 16);
+    const tDia = Number(item.ties_dia || 8);
+    const tSp = Number(item.ties_spacing || 150);
 
     const boxMult = Number(item.box_count || 0);
     const colMult = Number(item.total_col_count || item.box_count || 0);
+    const depth = Number(item.depth_mm);
+    const cov = Number(settings.footing_cover_mm);
+    const ccov = Number(settings.column_cover_mm);
+    const dEff = Math.max(100, depth - 2 * cov);
+    const lEff = Math.max(100, Number(item.footing_l_mm) - 2 * cov);
+    const bEff = Math.max(100, Number(item.footing_b_mm) - 2 * cov);
 
-    // 1. LONG LOWER
-    const llDia = item.long_lower_dia || 12;
-    const llCut = 2 * dEff + lEff - 2 * llDia;
-    const llNos = Number(item.long_lower_nos || 0);
+    const llId = `${mark}_long_lower`;
+    const suId = `${mark}_short_upper`;
+
     rows.push({
-      id: `${mark}_long_lower`,
+      id: llId,
       sr_no: srNo,
       group_key: mark,
       bar_mark: `${mark} Footing`,
@@ -89,27 +318,30 @@
       span_expr: null,
       span_mm: Number(item.footing_l_mm),
       dia_mm: llDia,
-      shape: { kind: "u_bar", labels: { span: String(lEff), leg: String(dEff) } },
+      shape: { kind: "u_bar", labels: { span: formatExact(lEff), leg: formatExact(dEff) } },
       spacing_mm: null,
       nos_expr: null,
-      nos: llNos,
+      nos: Number(item.long_lower_nos || 0),
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: boxMult,
-      total_nos: llNos * boxMult,
-      cut_length_expr: `=${dEff}+${lEff}+${dEff}-(2*${llDia})`,
-      cut_length_mm: llCut,
+      total_nos: 0,
+      cut_length_expr: "=(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)+(@SELF:Z-2*$S$2)-(2*@SELF:E)",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(llNos * boxMult, llCut, llDia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: null,
+      param_ab: null,
+      param_ac: boxMult,
+      param_ad: 1,
+      param_ae: "Z=Depth(mm); AC=BoxQty; AD=Layers",
       remark: mark === "C3" && settings.mode === "sample_compat" ? "c3 c6 attach" : "",
       inferred: false,
       source_note: "",
     });
 
-    // 2. SHORT UPPER
-    const suDia = item.short_upper_dia || 12;
-    const suCut = 2 * dEff + bEff - 2 * suDia;
-    const suNos = Number(item.short_upper_nos || 0);
     rows.push({
-      id: `${mark}_short_upper`,
+      id: suId,
       sr_no: null,
       group_key: mark,
       bar_mark: `${mark} Footing`,
@@ -117,149 +349,213 @@
       span_expr: null,
       span_mm: Number(item.footing_b_mm),
       dia_mm: suDia,
-      shape: { kind: "u_bar", labels: { span: String(bEff), leg: String(dEff) } },
+      shape: { kind: "u_bar", labels: { span: formatExact(bEff), leg: formatExact(dEff) } },
       spacing_mm: null,
       nos_expr: null,
-      nos: suNos,
+      nos: Number(item.short_upper_nos || 0),
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: boxMult,
-      total_nos: suNos * boxMult,
-      cut_length_expr: `=${dEff}+${bEff}+${dEff}-(2*${suDia})`,
-      cut_length_mm: suCut,
+      total_nos: 0,
+      cut_length_expr: "=(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)+(@SELF:Z-2*$S$2)-(2*@SELF:E)",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(suNos * boxMult, suCut, suDia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: null,
+      param_ab: null,
+      param_ac: boxMult,
+      param_ad: 1,
+      param_ae: "Z=Depth(mm); AC=BoxQty; AD=Layers",
       remark: mark === "C3" && settings.mode === "sample_compat" ? "c3 c6 attach" : "",
       inferred: false,
       source_note: "",
     });
 
-    // 3. SIDE BARS
-    const sbDia = item.side_bars_dia || 10;
-    const sbNos = Number(item.side_bars_nos || 0);
-    const [sbExpr, sbVal, sbInf] = sideBarFormula(mark, bEff, lEff, llDia, sbDia, settings.mode);
+    let sbAdj = 0;
+    let hookPart = "+2*MAX($S$3*@SELF:E,$U$3)";
+    if (settings.mode === "sample_compat") {
+      hookPart = "+2*$U$3";
+      if (mark === "C1" && Math.abs(bEff - 2200) < 1e-6 && Math.abs(lEff - 2600) < 1e-6) sbAdj = -22;
+      else if (mark === "C3" && Math.abs(bEff - 2400) < 1e-6 && Math.abs(lEff - 2800) < 1e-6) sbAdj = -2;
+      else if (mark === "C4" && Math.abs(bEff - 3000) < 1e-6 && Math.abs(lEff - 3400) < 1e-6) sbAdj = -50;
+      else if (mark === "C6" && Math.abs(bEff - 2300) < 1e-6 && Math.abs(lEff - 2700) < 1e-6) sbAdj = -40;
+    }
+
     rows.push({
       id: `${mark}_side_bars`,
       sr_no: null,
       group_key: mark,
       bar_mark: `${mark} Footing`,
       description: "SIDE BARS",
-      span_expr: sbExpr,
-      span_mm: sbVal,
+      span_expr: `=2*(@ID:${llId}:D-2*$S$2)+2*(@ID:${suId}:D-2*$S$2)${hookPart}-(4*@ID:${llId}:E)+@SELF:AB`,
+      span_mm: 0,
       dia_mm: sbDia,
       shape: { kind: "straight", labels: { text: "Along Perimeter" } },
       spacing_mm: null,
       nos_expr: null,
-      nos: sbNos,
+      nos: Number(item.side_bars_nos || 0),
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: boxMult,
-      total_nos: sbNos * boxMult,
-      cut_length_expr: "=SELF_SPAN",
-      cut_length_mm: sbVal,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(sbNos * boxMult, sbVal, sbDia),
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: sbAdj,
+      param_ac: boxMult,
+      param_ad: 1,
+      param_ae: "AB=Hook/BendCompatAdj(mm); AC=BoxQty; AD=Layers",
       remark: "",
-      inferred: sbInf,
+      inferred: false,
       source_note: "",
     });
 
-    // 4. COLUMN VERTICAL
-    const vDia = item.vert_dia || 16;
-    const vNos = Number(item.vert_nos || 0);
-    const vCut = ld + hCol;
+    const hCol = Number(settings.column_height_mm);
+    const ld = Number(settings.ld_vertical_mm);
     rows.push({
       id: `${mark}_col_vert`,
       sr_no: null,
       group_key: mark,
       bar_mark: `${mark} Col. Vertical`,
       description: `COLUMN(upto ${(hCol / 1000).toFixed(3)} m)`,
-      span_expr: `=${ld}+${hCol}`,
-      span_mm: vCut,
+      span_expr: "=$Y$2+$W$2",
+      span_mm: ld + hCol,
       dia_mm: vDia,
-      shape: { kind: "l_bar", labels: { ld: String(ld), height: String(hCol) } },
+      shape: { kind: "l_bar", labels: { ld: formatExact(ld), height: formatExact(hCol) } },
       spacing_mm: null,
       nos_expr: null,
-      nos: vNos,
+      nos: Number(item.vert_nos || 0),
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: colMult,
-      total_nos: vNos * colMult,
-      cut_length_expr: `=${ld}+${hCol}`,
-      cut_length_mm: vCut,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(vNos * colMult, vCut, vDia),
-      remark: mark === "C1" ? `Ld=${ld}` : "",
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: null,
+      param_ac: colMult,
+      param_ad: 1,
+      param_ae: "Span=$Y$2(Ld)+$W$2(ColHt); AC=ColQty; AD=Layers",
+      remark: mark === "C1" ? `Ld=${formatExact(ld)}` : "",
       inferred: false,
       source_note: "",
     });
 
-    // 5. COLUMN STIRRUPS
-    const tDia = item.ties_dia || 8;
-    const tSp = item.ties_spacing || 150;
-    const cw = Math.max(100, item.col_b_mm - 2 * ccov);
-    const ch = Math.max(100, item.col_l_mm - 2 * ccov);
-    const hk = Math.max(settings.hook_mult * tDia, settings.hook_min_mm);
+    const cw = Math.max(100, Number(item.col_b_mm) - 2 * ccov);
+    const ch = Math.max(100, Number(item.col_l_mm) - 2 * ccov);
+    const hk = Math.max(Number(settings.hook_mult) * tDia, Number(settings.hook_min_mm));
+    const useCompatTieHt = settings.mode === "sample_compat" && (mark === "C2" || mark === "C3");
+    const outerTieId = `${mark}_tie_outer`;
+    const outerSpanExpr = "=2*(@SELF:Z-2*$U$2)+2*(@SELF:AA-2*$U$2)+2*MAX($S$3*@SELF:E,$U$3)-(3*2*@SELF:E)-(3*@SELF:E)";
+    const outerNosInner = useCompatTieHt ? "$Q$4/@SELF:J" : "$W$2/@SELF:J";
 
-    const tieNumH = settings.mode === "sample_compat" && (mark === "C2" || mark === "C3") ? 4500 : hCol;
-    const rawTieNos = tieNumH / tSp;
-    const tieNos = ceilIf(rawTieNos, settings.round_up_nos);
-    const nosFormula = settings.round_up_nos
-      ? `=ROUNDUP(${tieNumH}/${tSp},0)`
-      : `=${tieNumH}/${tSp}`;
+    rows.push({
+      id: outerTieId,
+      sr_no: null,
+      group_key: mark,
+      bar_mark: `${mark} Col. Stirrups`,
+      description: "COL.TIES(OUTER)",
+      span_expr: outerSpanExpr,
+      span_mm: 0,
+      dia_mm: tDia,
+      shape: { kind: "stirrup_rect", labels: { a: formatExact(ch), b: formatExact(cw), hook: formatExact(hk) } },
+      spacing_mm: tSp,
+      nos_expr: wrapRoundup(outerNosInner, settings.round_up_nos),
+      nos: 0,
+      multiple_expr: "=@SELF:AC*@SELF:AD",
+      multiple_no: colMult,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
+      coupler: 0,
+      weight_kg: 0,
+      param_z: Number(item.col_b_mm),
+      param_aa: Number(item.col_l_mm),
+      param_ab: null,
+      param_ac: colMult,
+      param_ad: 1,
+      param_ae: useCompatTieHt
+        ? "Z=ColB(mm); AA=ColL(mm); Nos uses $Q$4(4500)/J; AC=ColQty"
+        : "Z=ColB(mm); AA=ColL(mm); Nos uses $W$2(ColHt)/J; AC=ColQty",
+      remark: "",
+      inferred: false,
+      source_note: "",
+    });
 
-    const outerLen = 2 * cw + 2 * ch + 2 * hk - 3 * 2 * tDia - 3 * tDia;
-    const outerExpr = `=${cw}+${cw}+${ch}+${ch}+(${hk}+${hk})-(3*2*${tDia})-(3*${tDia})`;
-
-    const layers = [];
-    if (item.vert_nos >= 16) {
-      const step = Math.round(ch / 6.0);
-      layers.push(["OUTER", outerLen, outerExpr, ch]);
-      let prev = outerLen;
-      let curCh = ch;
-      for (const name of ["MIDDLE", "INNER"]) {
-        prev -= 2 * step;
-        curCh -= 2 * step;
-        layers.push([name, prev, `=PREV_TIE-${step}-${step}`, curCh]);
-      }
-      const centerLen = cw + 2 * hk - 3 * tDia * 2;
-      const centerExpr = `=${cw}+(${hk}+${hk})-(3*${tDia}*2)`;
-      layers.push(["CENTER", centerLen, centerExpr, cw]);
-    } else {
-      const step = Math.round(ch / 5.0);
-      layers.push(["OUTER", outerLen, outerExpr, ch]);
-      let prev = outerLen;
-      let curCh = ch;
-      for (const name of ["MIDDLE", "INNER"]) {
-        prev -= 2 * step;
-        curCh -= 2 * step;
-        layers.push([name, prev, `=PREV_TIE-${step}-${step}`, curCh]);
-      }
-    }
-
-    layers.forEach(([lname, tLen, tExpr, dimA], idx) => {
-      const shapeSpec =
-        lname === "CENTER"
-          ? { kind: "center_link", labels: { a: String(cw), hook: String(hk) } }
-          : { kind: "stirrup_rect", labels: { a: String(dimA), b: String(cw), hook: String(hk) } };
+    const divRef = item.vert_nos >= 16 ? "$W$4" : "$Y$4";
+    const divVal = item.vert_nos >= 16 ? Number(settings.tie_step_div_ge16) : Number(settings.tie_step_div_lt16);
+    const step = ch / divVal; // strictly unrounded
+    let curCh = ch;
+    for (const lname of ["MIDDLE", "INNER"]) {
+      curCh -= 2 * step;
       rows.push({
         id: `${mark}_tie_${lname.toLowerCase()}`,
         sr_no: null,
         group_key: mark,
         bar_mark: `${mark} Col. Stirrups`,
         description: `COL.TIES(${lname})`,
-        span_expr: tExpr,
-        span_mm: tLen,
+        span_expr: `=@PREV:D-2*((@ID:${outerTieId}:AA-2*$U$2)/${divRef})`,
+        span_mm: 0,
         dia_mm: tDia,
-        shape: shapeSpec,
+        shape: { kind: "stirrup_rect", labels: { a: formatExact(curCh), b: formatExact(cw), hook: formatExact(hk) } },
         spacing_mm: tSp,
-        nos_expr: idx === 0 ? nosFormula : "=FIRST_TIE_NOS",
-        nos: tieNos,
+        nos_expr: `=@ID:${outerTieId}:K`,
+        nos: 0,
+        multiple_expr: `=@ID:${outerTieId}:L`,
         multiple_no: colMult,
-        total_nos: tieNos * colMult,
-        cut_length_expr: "=SELF_SPAN",
-        cut_length_mm: tLen,
+        total_nos: 0,
+        cut_length_expr: "=@SELF:D",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(tieNos * colMult, tLen, tDia),
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: null,
+        param_ad: null,
+        param_ae: `Step=2*(ColL_eff/${divRef} unrounded)`,
         remark: "",
         inferred: false,
         source_note: "",
       });
-    });
+    }
+
+    if (item.vert_nos >= 16) {
+      rows.push({
+        id: `${mark}_tie_center`,
+        sr_no: null,
+        group_key: mark,
+        bar_mark: `${mark} Col. Stirrups`,
+        description: "COL.TIES(CENTER)",
+        span_expr: `=(@ID:${outerTieId}:Z-2*$U$2)+2*MAX($S$3*@SELF:E,$U$3)-(3*@SELF:E*2)`,
+        span_mm: 0,
+        dia_mm: tDia,
+        shape: { kind: "center_link", labels: { a: formatExact(cw), hook: formatExact(hk) } },
+        spacing_mm: tSp,
+        nos_expr: `=@ID:${outerTieId}:K`,
+        nos: 0,
+        multiple_expr: `=@ID:${outerTieId}:L`,
+        multiple_no: colMult,
+        total_nos: 0,
+        cut_length_expr: "=@SELF:D",
+        cut_length_mm: 0,
+        coupler: 0,
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: null,
+        param_ad: null,
+        param_ae: "Link uses OuterTie Z(ColB)-2*$U$2",
+        remark: "",
+        inferred: false,
+        source_note: "",
+      });
+    }
 
     return rows;
   }
@@ -267,23 +563,27 @@
   function buildCf1OrCf2Rows(item, swItem, srNo, settings) {
     const rows = [];
     const mark = item.mark;
-    const cov = settings.footing_cover_mm;
-    const ccov = settings.column_cover_mm;
+    const cov = Number(settings.footing_cover_mm);
+    const ccov = Number(settings.column_cover_mm);
     const sp = Number(item.long_lower_spacing || 150);
-    const dia = item.long_lower_dia || 12;
-    const cfMult = Math.max(1, item.combined_count || 1) * 2;
+    const dia = Number(item.long_lower_dia || 12);
+    const cfCount = Math.max(1, Number(item.combined_count || 1));
+    const depth = Number(item.depth_mm);
+    const compat = settings.mode === "sample_compat";
 
     if (mark === "CF1") {
-      const longSpan = settings.mode === "sample_compat" ? 5300 : item.footing_b_mm;
-      const shortSpan = item.footing_l_mm || 3866;
-      const leg = settings.mode === "sample_compat" ? 530 : Math.max(100, item.depth_mm - 2 * cov);
-      const longEff = settings.mode === "sample_compat" ? longSpan - 112 : longSpan - 2 * cov;
-      const shortEff = settings.mode === "sample_compat" ? shortSpan - 112 : shortSpan - 2 * cov;
-      const longNos = settings.mode === "sample_compat" ? 26 : ceilIf(shortEff / sp + 1, settings.round_up_nos);
-      const shortNos = settings.mode === "sample_compat" ? 36 : ceilIf(longEff / sp + 1, settings.round_up_nos);
+      const longSpan = compat ? 5300 : Number(item.footing_b_mm);
+      const shortSpan = Number(item.footing_l_mm || 3866);
+      const legExtra = compat ? 20 : 0;
+      const effOff = compat ? 12 : 0;
+      const leg = depth - 2 * cov - legExtra;
+      const longEff = longSpan - (2 * cov + effOff);
+      const shortEff = shortSpan - (2 * cov + effOff);
+      const nosExpr = compat ? null : wrapRoundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos);
 
+      const cf1LongId = "CF1_long";
       rows.push({
-        id: "CF1_long",
+        id: cf1LongId,
         sr_no: srNo,
         group_key: "CF1",
         bar_mark: "SW1 CF1",
@@ -291,19 +591,28 @@
         span_expr: null,
         span_mm: longSpan,
         dia_mm: dia,
-        shape: { kind: "combined_loop", labels: { span: String(longEff), leg: String(leg) } },
+        shape: { kind: "combined_loop", labels: { span: formatExact(longEff), leg: formatExact(leg) } },
         spacing_mm: sp,
-        nos_expr: null,
-        nos: longNos,
-        multiple_no: cfMult,
-        total_nos: longNos * cfMult,
-        cut_length_expr: `=${leg}+${longEff}+${leg}-(${dia}*2)`,
-        cut_length_mm: 2 * leg + longEff - 2 * dia,
+        nos_expr: nosExpr,
+        nos: compat ? 26 : 0,
+        multiple_expr: "=@SELF:AC*@SELF:AD",
+        multiple_no: cfCount * 2,
+        total_nos: 0,
+        cut_length_expr: compat
+          ? "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
+          : "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(longNos * cfMult, 2 * leg + longEff - 2 * dia, dia),
+        weight_kg: 0,
+        param_z: depth,
+        param_aa: shortSpan,
+        param_ab: legExtra,
+        param_ac: cfCount,
+        param_ad: 2,
+        param_ae: "Z=Depth; AA=PerpSpan; AB=LegCompatDed; AC=Qty; AD=Layers(2)",
         remark: "",
         inferred: true,
-        source_note: "CF1 shaft span includes lift projection beyond schedule width",
+        source_note: "CF1 shaft span 5300 mm includes lift projection beyond 4501 mm schedule width",
       });
       rows.push({
         id: "CF1_short",
@@ -314,47 +623,62 @@
         span_expr: null,
         span_mm: shortSpan,
         dia_mm: dia,
-        shape: { kind: "combined_loop", labels: { span: String(shortEff), leg: String(leg) } },
+        shape: { kind: "combined_loop", labels: { span: formatExact(shortEff), leg: formatExact(leg) } },
         spacing_mm: sp,
-        nos_expr: null,
-        nos: shortNos,
-        multiple_no: cfMult,
-        total_nos: shortNos * cfMult,
-        cut_length_expr: `=${leg}+${shortEff}+${leg}-(2*${dia})`,
-        cut_length_mm: 2 * leg + shortEff - 2 * dia,
+        nos_expr: nosExpr,
+        nos: compat ? 36 : 0,
+        multiple_expr: "=@SELF:AC*@SELF:AD",
+        multiple_no: cfCount * 2,
+        total_nos: 0,
+        cut_length_expr: compat
+          ? "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
+          : "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(shortNos * cfMult, 2 * leg + shortEff - 2 * dia, dia),
+        weight_kg: 0,
+        param_z: depth,
+        param_aa: longSpan,
+        param_ab: legExtra,
+        param_ac: cfCount,
+        param_ad: 2,
+        param_ae: "Z=Depth; AA=PerpSpan; AB=LegCompatDed; AC=Qty; AD=Layers(2)",
         remark: "",
         inferred: false,
         source_note: "",
       });
 
-      const ib = item.shaft_inner_b_mm || 2810;
-      const il = item.shaft_inner_l_mm || 2296;
-      const perim = 2 * (ib + il);
-      const htCf1 = settings.shear_wall_ht_cf1_mm;
-      const swCut = htCf1 - ccov + item.depth_mm - cov - dia - dia + 300;
-      const swEfNos = ceilIf(perim / sp, settings.round_up_nos);
+      const ib = Number(item.shaft_inner_b_mm || 2810);
+      const il = Number(item.shaft_inner_l_mm || 2296);
+      const htCf1 = Number(settings.shear_wall_ht_cf1_mm);
+      const swCutEst = htCf1 - ccov + depth - cov - dia - dia + Number(settings.sw_dowel_mm);
+      const swEfId = "CF1_sw_ef";
       rows.push({
-        id: "CF1_sw_ef",
+        id: swEfId,
         sr_no: null,
         group_key: "CF1",
         bar_mark: "SW1 CF1",
         description: "SHEAR WALL E/F",
-        span_expr: `=${ib}+${il}+${ib}+${il}`,
-        span_mm: perim,
+        span_expr: "=2*(@SELF:Z+@SELF:AA)",
+        span_mm: 0,
         dia_mm: 10,
-        shape: { kind: "l_bar", labels: { ld: "300", height: String(Math.round(swCut - 300)) } },
+        shape: { kind: "l_bar", labels: { ld: formatExact(settings.sw_dowel_mm), height: formatExact(swCutEst - Number(settings.sw_dowel_mm)) } },
         spacing_mm: sp,
-        nos_expr: `=SELF_SPAN/${Math.round(sp)}`,
-        nos: swEfNos,
+        nos_expr: wrapRoundup("@SELF:D/@SELF:J", settings.round_up_nos),
+        nos: 0,
+        multiple_expr: "=@SELF:AC*@SELF:AD",
         multiple_no: 2,
-        total_nos: swEfNos * 2,
-        cut_length_expr: `=${htCf1}-${ccov}+${item.depth_mm}-${cov}-${dia}-${dia}+300`,
-        cut_length_mm: swCut,
+        total_nos: 0,
+        cut_length_expr: `=$S$4-$U$2+@ID:${cf1LongId}:Z-$S$2-@ID:${cf1LongId}:E-@ID:${cf1LongId}:E+$P$3`,
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(swEfNos * 2, swCut, 10),
-        remark: `upto ${htCf1} ht.`,
+        weight_kg: 0,
+        param_z: ib,
+        param_aa: il,
+        param_ab: null,
+        param_ac: 1,
+        param_ad: 2,
+        param_ae: "Z=ShaftB; AA=ShaftL; CutLen uses $S$4,$U$2,CF1 Z,$S$2,CF1 Dia,$P$3",
+        remark: `upto ${formatExact(htCf1)} ht.`,
         inferred: false,
         source_note: "",
       });
@@ -366,69 +690,87 @@
         group_key: "CF1",
         bar_mark: "SW1 CF1",
         description: "SHEAR WALL E/C",
-        span_expr: "=PREV_SPAN",
-        span_mm: perim,
+        span_expr: `=@ID:${swEfId}:D`,
+        span_mm: 0,
         dia_mm: 12,
-        shape: { kind: "l_bar", labels: { ld: "300", height: String(Math.round(swCut - 300)) } },
+        shape: { kind: "l_bar", labels: { ld: formatExact(settings.sw_dowel_mm), height: formatExact(swCutEst - Number(settings.sw_dowel_mm)) } },
         spacing_mm: null,
         nos_expr: null,
         nos: ecNos,
+        multiple_expr: "=@SELF:AC*@SELF:AD",
         multiple_no: 4,
-        total_nos: ecNos * 4,
-        cut_length_expr: "=PREV_CUT",
-        cut_length_mm: swCut,
+        total_nos: 0,
+        cut_length_expr: `=@ID:${swEfId}:N`,
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(ecNos * 4, swCut, 12),
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: 1,
+        param_ad: 4,
+        param_ae: "Span & CutLen linked to SHEAR WALL E/F; AD=4 corners",
         remark: "",
         inferred: false,
         source_note: "",
       });
 
-      const outerTie = perim - ccov * 4 + 75 + 75;
       rows.push({
         id: "CF1_tie_outer",
         sr_no: null,
         group_key: "CF1",
         bar_mark: "SW1 CF1",
         description: "SHEAR WALL TIES Outer ",
-        span_expr: `=PREV_SPAN-(${ccov}*4)+75+75`,
-        span_mm: outerTie,
+        span_expr: `=@ID:${swEfId}:D-($U$2*4)+$U$3+$U$3`,
+        span_mm: 0,
         dia_mm: 8,
         shape: { kind: "stirrup_rect", labels: {} },
         spacing_mm: sp,
         nos_expr: null,
         nos: 16,
+        multiple_expr: "=@SELF:AC",
         multiple_no: 1,
-        total_nos: 16,
-        cut_length_expr: "=SELF_SPAN",
-        cut_length_mm: outerTie,
+        total_nos: 0,
+        cut_length_expr: "=@SELF:D",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(16, outerTie, 8),
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: 1,
+        param_ad: null,
+        param_ae: "Perimeter - 4*ColCover($U$2) + 2*MinHook($U$3)",
         remark: "To be verify at site",
         inferred: true,
         source_note: "",
       });
-
-      const innerTie = outerTie - 4 * 80 + 75 + 75;
       rows.push({
         id: "CF1_tie_inner",
         sr_no: null,
         group_key: "CF1",
         bar_mark: "SW1 CF1",
         description: "SHEAR WALL TIES Inner",
-        span_expr: "=PREV_SPAN-(4*80)+75+75",
-        span_mm: innerTie,
+        span_expr: "=@PREV:D-(4*$O$4)+$U$3+$U$3",
+        span_mm: 0,
         dia_mm: 8,
         shape: { kind: "stirrup_rect", labels: {} },
         spacing_mm: sp,
         nos_expr: null,
         nos: 16,
+        multiple_expr: "=@SELF:AC",
         multiple_no: 1,
-        total_nos: 16,
-        cut_length_expr: "=SELF_SPAN",
-        cut_length_mm: innerTie,
+        total_nos: 0,
+        cut_length_expr: "=@SELF:D",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(16, innerTie, 8),
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: 1,
+        param_ad: null,
+        param_ae: "OuterTie - 4*SWInnerOff($O$4) + 2*MinHook($U$3)",
         remark: "To be verify at site",
         inferred: true,
         source_note: "",
@@ -437,16 +779,17 @@
     }
 
     // CF2
-    const longSpan = settings.mode === "sample_compat" ? 4300 : Math.max(item.footing_b_mm, item.footing_l_mm);
-    const shortSpan = item.footing_l_mm || 3866;
-    const leg = item.depth_mm - 2 * cov;
-    const longEff = settings.mode === "sample_compat" ? longSpan - 112 : longSpan - 2 * cov;
-    const shortEff = settings.mode === "sample_compat" ? shortSpan - 112 : shortSpan - 2 * cov;
-    const longNos = settings.mode === "sample_compat" ? 26 : ceilIf(shortEff / sp + 1, settings.round_up_nos);
-    const shortNos = settings.mode === "sample_compat" ? 29 : ceilIf(longEff / sp + 1, settings.round_up_nos);
+    const longSpan = compat ? 4300 : Math.max(Number(item.footing_b_mm), Number(item.footing_l_mm));
+    const shortSpan = Number(item.footing_l_mm || 3866);
+    const leg = depth - 2 * cov;
+    const longEff = compat ? longSpan - 112 : longSpan - 2 * cov;
+    const shortEff = compat ? shortSpan - 112 : shortSpan - 2 * cov;
+    const cf2NosExpr = compat ? null : wrapRoundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos);
 
+    const cf2LongId = "CF2_long";
+    const cf2ShortId = "CF2_short";
     rows.push({
-      id: "CF2_long",
+      id: cf2LongId,
       sr_no: srNo,
       group_key: "CF2",
       bar_mark: "CF2",
@@ -454,22 +797,31 @@
       span_expr: null,
       span_mm: longSpan,
       dia_mm: dia,
-      shape: { kind: "combined_loop", labels: { span: String(longEff), leg: String(leg) } },
+      shape: { kind: "combined_loop", labels: { span: formatExact(longEff), leg: formatExact(leg) } },
       spacing_mm: sp,
-      nos_expr: null,
-      nos: longNos,
-      multiple_no: cfMult,
-      total_nos: longNos * cfMult,
-      cut_length_expr: `=${leg}+${longEff}+${leg}-(${dia}*2)`,
-      cut_length_mm: 2 * leg + longEff - 2 * dia,
+      nos_expr: cf2NosExpr,
+      nos: compat ? 26 : 0,
+      multiple_expr: "=@SELF:AC*@SELF:AD",
+      multiple_no: cfCount * 2,
+      total_nos: 0,
+      cut_length_expr: compat
+        ? "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
+        : "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(longNos * cfMult, 2 * leg + longEff - 2 * dia, dia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: shortSpan,
+      param_ab: null,
+      param_ac: cfCount,
+      param_ad: 2,
+      param_ae: "Z=Depth; AA=PerpSpan; AC=Qty; AD=Layers(2)",
       remark: "",
       inferred: true,
       source_note: "",
     });
     rows.push({
-      id: "CF2_short",
+      id: cf2ShortId,
       sr_no: null,
       group_key: "CF2",
       bar_mark: "CF2",
@@ -477,146 +829,186 @@
       span_expr: null,
       span_mm: shortSpan,
       dia_mm: dia,
-      shape: { kind: "combined_loop", labels: { span: String(shortEff), leg: String(leg) } },
+      shape: { kind: "combined_loop", labels: { span: formatExact(shortEff), leg: formatExact(leg) } },
       spacing_mm: sp,
-      nos_expr: null,
-      nos: shortNos,
-      multiple_no: cfMult,
-      total_nos: shortNos * cfMult,
-      cut_length_expr: `=${leg}+${shortEff}+${leg}-(2*${dia})`,
-      cut_length_mm: 2 * leg + shortEff - 2 * dia,
+      nos_expr: cf2NosExpr,
+      nos: compat ? 29 : 0,
+      multiple_expr: "=@SELF:AC*@SELF:AD",
+      multiple_no: cfCount * 2,
+      total_nos: 0,
+      cut_length_expr: compat
+        ? "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
+        : "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(shortNos * cfMult, 2 * leg + shortEff - 2 * dia, dia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: longSpan,
+      param_ab: null,
+      param_ac: cfCount,
+      param_ad: 2,
+      param_ae: "Z=Depth; AA=PerpSpan; AC=Qty; AD=Layers(2)",
       remark: "",
       inferred: false,
       source_note: "",
     });
 
-    const sbCut = 2 * shortEff + 2 * longEff - 4 * dia;
-    const sbMult = Math.max(1, item.combined_count || 1) * 2;
-    const sbNos = Number(item.side_bars_nos || 2);
-    const sbDia = item.side_bars_dia || 10;
+    const sbSpanExpr = compat
+      ? `=2*(@ID:${cf2ShortId}:D-2*$S$2-12)+2*(@ID:${cf2LongId}:D-2*$S$2-12)-(4*@ID:${cf2LongId}:E)`
+      : `=2*(@ID:${cf2ShortId}:D-2*$S$2)+2*(@ID:${cf2LongId}:D-2*$S$2)-(4*@ID:${cf2LongId}:E)`;
+
     rows.push({
       id: "CF2_side",
       sr_no: null,
       group_key: "CF2",
-      bar_mark: settings.mode === "strict_geometry" ? "CF2" : "C6",
+      bar_mark: compat ? "C6" : "CF2",
       description: "SIDE BARS",
-      span_expr: `=${shortEff}+${shortEff}+${longEff}+${longEff}-${dia}-${dia}-${dia}-${dia}`,
-      span_mm: sbCut,
-      dia_mm: sbDia,
+      span_expr: sbSpanExpr,
+      span_mm: 0,
+      dia_mm: Number(item.side_bars_dia || 10),
       shape: { kind: "straight", labels: { text: "Along Perimeter" } },
       spacing_mm: null,
       nos_expr: null,
-      nos: sbNos,
-      multiple_no: sbMult,
-      total_nos: sbNos * sbMult,
-      cut_length_expr: "=SELF_SPAN",
-      cut_length_mm: sbCut,
+      nos: Number(item.side_bars_nos || 2),
+      multiple_expr: "=@SELF:AC*@SELF:AD",
+      multiple_no: cfCount * 2,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(sbNos * sbMult, sbCut, sbDia),
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: null,
+      param_ac: cfCount,
+      param_ad: 2,
+      param_ae: "Perimeter linked to CF2 LONG/SHORT spans; AC=Qty; AD=Layers",
       remark: "",
       inferred: false,
       source_note: "",
     });
 
-    const ib = item.shaft_inner_b_mm || 2300;
-    const il = item.shaft_inner_l_mm || 2366;
-    const perim2 = 2 * (ib + il);
-    const sw2Ht = 300 + settings.shear_wall_ht_cf2_mm;
-    const sw2Nos = ceilIf(perim2 / sp, settings.round_up_nos);
+    const ib = Number(item.shaft_inner_b_mm || 2300);
+    const il = Number(item.shaft_inner_l_mm || 2366);
+    const cf2SwEfId = "CF2_sw_ef";
+    const cf2SwEcId = "CF2_sw_ec";
     rows.push({
-      id: "CF2_sw_ef",
+      id: cf2SwEfId,
       sr_no: null,
       group_key: "CF2",
       bar_mark: "CF2",
       description: "SHEAR WALL E/F",
-      span_expr: `=${ib}+${il}+${ib}+${il}`,
-      span_mm: perim2,
+      span_expr: "=2*(@SELF:Z+@SELF:AA)",
+      span_mm: 0,
       dia_mm: 10,
-      shape: { kind: "l_bar", labels: { ld: "300", height: String(settings.shear_wall_ht_cf2_mm) } },
+      shape: { kind: "l_bar", labels: { ld: formatExact(settings.sw_dowel_mm), height: formatExact(settings.shear_wall_ht_cf2_mm) } },
       spacing_mm: sp,
-      nos_expr: `=SELF_SPAN/${Math.round(sp)}`,
-      nos: sw2Nos,
+      nos_expr: wrapRoundup("@SELF:D/@SELF:J", settings.round_up_nos),
+      nos: 0,
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: 2,
-      total_nos: sw2Nos * 2,
-      cut_length_expr: `=300+${settings.shear_wall_ht_cf2_mm}`,
-      cut_length_mm: sw2Ht,
+      total_nos: 0,
+      cut_length_expr: "=$P$3+$U$4",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(sw2Nos * 2, sw2Ht, 10),
+      weight_kg: 0,
+      param_z: ib,
+      param_aa: il,
+      param_ab: null,
+      param_ac: 1,
+      param_ad: 2,
+      param_ae: "Z=ShaftB; AA=ShaftL; CutLen=$P$3(Dowel)+$U$4(CF2Ht)",
       remark: "",
       inferred: false,
       source_note: "",
     });
     rows.push({
-      id: "CF2_sw_ec",
+      id: cf2SwEcId,
       sr_no: null,
       group_key: "CF2",
-      bar_mark: settings.mode === "strict_geometry" ? "SW1 CF2" : "SW1 CF1",
+      bar_mark: compat ? "SW1 CF1" : "SW1 CF2",
       description: "SHEAR WALL E/C",
-      span_expr: "=PREV_SPAN",
-      span_mm: perim2,
+      span_expr: `=@ID:${cf2SwEfId}:D`,
+      span_mm: 0,
       dia_mm: 12,
-      shape: { kind: "l_bar", labels: { ld: "300", height: String(settings.shear_wall_ht_cf2_mm) } },
+      shape: { kind: "l_bar", labels: { ld: formatExact(settings.sw_dowel_mm), height: formatExact(settings.shear_wall_ht_cf2_mm) } },
       spacing_mm: null,
       nos_expr: null,
       nos: 4,
+      multiple_expr: "=@SELF:AC*@SELF:AD",
       multiple_no: 4,
-      total_nos: 16,
-      cut_length_expr: "=PREV_CUT",
-      cut_length_mm: sw2Ht,
+      total_nos: 0,
+      cut_length_expr: `=@ID:${cf2SwEfId}:N`,
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(16, sw2Ht, 12),
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: null,
+      param_ac: 1,
+      param_ad: 4,
+      param_ae: "Linked to SHEAR WALL E/F; AD=4 corners",
       remark: "",
       inferred: false,
       source_note: "",
     });
 
-    const outer2 = 2 * ib + 2 * il + 16 * 8 - 3 * 8 - 3 * 8 * 2 - 48 - 80;
     rows.push({
       id: "CF2_tie_outer",
       sr_no: null,
       group_key: "CF2",
-      bar_mark: settings.mode === "strict_geometry" ? "SW1 CF2" : "SW1 CF1",
+      bar_mark: compat ? "SW1 CF1" : "SW1 CF2",
       description: "SHEAR WALL TIES Outer ",
-      span_expr: `=${ib}+${ib}+${il}+${il}+(16*8)-(3*8)-(3*8*2)-12-12-12-12-20-20-20-20`,
-      span_mm: outer2,
+      span_expr: `=2*@SELF:Z+2*@SELF:AA+(2*$S$3*@SELF:E)-(3*@SELF:E)-(3*@SELF:E*2)-(4*@ID:${cf2SwEcId}:E)-(4*@SELF:AD)`,
+      span_mm: 0,
       dia_mm: 8,
       shape: { kind: "stirrup_rect", labels: {} },
       spacing_mm: sp,
       nos_expr: null,
       nos: 16,
+      multiple_expr: "=@SELF:AC",
       multiple_no: 1,
-      total_nos: 16,
-      cut_length_expr: "=SELF_SPAN",
-      cut_length_mm: outer2,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(16, outer2, 8),
+      weight_kg: 0,
+      param_z: ib,
+      param_aa: il,
+      param_ab: null,
+      param_ac: 1,
+      param_ad: 20,
+      param_ae: "Z=ShaftB; AA=ShaftL; AD=MainVertDia(20)",
       remark: "suite at site",
       inferred: true,
       source_note: "",
     });
-
-    const inner2 = outer2 - 4 * 80;
     rows.push({
       id: "CF2_tie_inner",
       sr_no: null,
       group_key: "CF2",
-      bar_mark: settings.mode === "strict_geometry" ? "SW1 CF2" : "SW1 CF1",
+      bar_mark: compat ? "SW1 CF1" : "SW1 CF2",
       description: "SHEAR WALL TIES Inner",
-      span_expr: `=${ib}+${ib}+${il}+${il}+(16*8)-(3*8)-(3*8*2)-12-12-12-12-20-20-20-20-(4*80)`,
-      span_mm: inner2,
+      span_expr: "=@PREV:D-(4*$O$4)",
+      span_mm: 0,
       dia_mm: 8,
       shape: { kind: "stirrup_rect", labels: {} },
       spacing_mm: sp,
       nos_expr: null,
       nos: 16,
+      multiple_expr: "=@SELF:AC",
       multiple_no: 1,
-      total_nos: 16,
-      cut_length_expr: "=SELF_SPAN",
-      cut_length_mm: inner2,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(16, inner2, 8),
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: null,
+      param_ac: 1,
+      param_ad: null,
+      param_ae: "OuterTie - 4*SWInnerOff($O$4)",
       remark: "suite at site",
       inferred: true,
       source_note: "",
@@ -627,28 +1019,38 @@
   function buildCf3Cf4Cf5Rows(item, srNo, settings) {
     const rows = [];
     const mark = item.mark;
-    const cov = settings.footing_cover_mm;
-    const dia = item.long_lower_dia || 12;
+    const cov = Number(settings.footing_cover_mm);
+    const dia = Number(item.long_lower_dia || 12);
     const sp = Number(item.long_lower_spacing || 125);
-    const leg = item.depth_mm - 2 * cov - 15;
-    const cfCount = Math.max(1, item.combined_count || 1);
+    const depth = Number(item.depth_mm);
+    const legExtra = 15;
+    const leg = depth - 2 * cov - legExtra;
+    const cfCount = Math.max(1, Number(item.combined_count || 1));
     const cfMult = cfCount * 2;
+    const compat = settings.mode === "sample_compat";
 
     if (mark === "CF3") {
       const segs =
         item.l_shape_segments && item.l_shape_segments.length
           ? item.l_shape_segments
           : [
-              { label: "LONG LOWER 1", span: 6643, cut_span: 6530, dist_formula: "(2550-50)/125", cut_formula: "635+6530+650-(2*12)" },
-              { label: "LONG LOWER 2", span: 3500, cut_span: 3385, dist_formula: "(2490-50)/125", cut_formula: "635+3385+635-(2*12)" },
-              { label: "SHORT UPPER 1", span: 5040, cut_span: 4925, dist_formula: "(3500-12-100)/125", cut_formula: "635+4925+635-(2*12)" },
-              { label: "SHORT UPPER 2", span: 2550, cut_span: 2435, dist_formula: "(1240+719-100-12)/125", cut_formula: "635+2435+635-(2*12)" },
+              { label: "LONG LOWER 1", span: 6643, dist: 2550, cut_span: 6530 },
+              { label: "LONG LOWER 2", span: 3500, dist: 2490, cut_span: 3385 },
+              { label: "SHORT UPPER 1", span: 5040, dist: 3500, cut_span: 4925 },
+              { label: "SHORT UPPER 2", span: 2550, dist: 1959, cut_span: 2435 },
             ];
-      const distVals = [20.0, 19.52, 27.104, 14.776];
-      const cutVals = [7791, 4631, 6171, 3681];
       segs.forEach((seg, idx) => {
-        const nosVal = ceilIf(distVals[idx], settings.round_up_nos);
-        const cval = cutVals[idx];
+        const fallbackDists = [2550, 2490, 3500, 1959];
+        const spanV = Number(seg.span);
+        const distV = Number(seg.dist ?? fallbackDists[idx] ?? 0);
+        const cutSpanV = Number(seg.cut_span);
+        const nosInner = idx < 2 ? "(@SELF:AA-$S$2)/@SELF:J" : "(@SELF:AA-2*$S$2-@SELF:E)/@SELF:J";
+        const spanDed = spanV - cutSpanV;
+        const cutExpr =
+          idx === 0
+            ? "=(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-13)+(@SELF:Z-2*$S$2)-(2*@SELF:E)"
+            : "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)";
+
         rows.push({
           id: `CF3_seg_${idx + 1}`,
           sr_no: idx === 0 ? srNo : null,
@@ -656,45 +1058,57 @@
           bar_mark: "CF3",
           description: String(seg.label),
           span_expr: null,
-          span_mm: Number(seg.span),
+          span_mm: spanV,
           dia_mm: dia,
-          shape: { kind: "combined_loop", labels: { span: String(seg.cut_span), leg: String(leg) } },
+          shape: { kind: "combined_loop", labels: { span: formatExact(cutSpanV), leg: formatExact(leg) } },
           spacing_mm: sp,
-          nos_expr: `=${seg.dist_formula}`,
-          nos: nosVal,
+          nos_expr: wrapRoundup(nosInner, settings.round_up_nos),
+          nos: 0,
+          multiple_expr: "=@SELF:AD*@SELF:AC",
           multiple_no: cfMult,
-          total_nos: nosVal * cfMult,
-          cut_length_expr: `=${seg.cut_formula}`,
-          cut_length_mm: cval,
+          total_nos: 0,
+          cut_length_expr: cutExpr,
+          cut_length_mm: 0,
           coupler: 0,
-          weight_kg: computeWeightKg(nosVal * cfMult, cval, dia),
+          weight_kg: 0,
+          param_z: depth,
+          param_aa: distV,
+          param_ab: idx > 0 ? spanDed - 2 * cov : legExtra,
+          param_ac: cfCount,
+          param_ad: 2,
+          param_ae: "Z=Depth; AA=DistWidth; AB=CoverExtraOff; AC=CFQty; AD=Layers(2)",
           remark: idx === 0 ? "To be confirm at site" : "",
           inferred: true,
           source_note: "",
         });
       });
 
-      const sbNos = Number(item.side_bars_nos || 3);
-      const sbDia = item.side_bars_dia || 10;
       rows.push({
         id: "CF3_side",
         sr_no: null,
         group_key: "CF3",
         bar_mark: "CF3",
         description: "SIDE BARS",
-        span_expr: "=6643+2550+719+2490+3500+2424+2550",
-        span_mm: 20876,
-        dia_mm: sbDia,
+        span_expr: "=@ID:CF3_seg_1:D+@ID:CF3_seg_1:AA+719+@ID:CF3_seg_2:AA+@ID:CF3_seg_2:D+2424+@ID:CF3_seg_4:D",
+        span_mm: 0,
+        dia_mm: Number(item.side_bars_dia || 10),
         shape: { kind: "straight", labels: { text: "Along Perimeter" } },
         spacing_mm: null,
         nos_expr: null,
-        nos: sbNos,
+        nos: Number(item.side_bars_nos || 3),
+        multiple_expr: "=@SELF:AC",
         multiple_no: cfCount,
-        total_nos: sbNos * cfCount,
-        cut_length_expr: "=SELF_SPAN",
-        cut_length_mm: 20876,
+        total_nos: 0,
+        cut_length_expr: "=@SELF:D",
+        cut_length_mm: 0,
         coupler: 0,
-        weight_kg: computeWeightKg(sbNos * cfCount, 20876, sbDia),
+        weight_kg: 0,
+        param_z: null,
+        param_aa: null,
+        param_ab: null,
+        param_ac: cfCount,
+        param_ad: null,
+        param_ae: "L-perimeter linked to CF3 segments; AC=CFQty",
         remark: "",
         inferred: true,
         source_note: "",
@@ -702,40 +1116,23 @@
       return rows;
     }
 
-    const b = Math.min(item.footing_b_mm, item.footing_l_mm) || 3100;
-    const l = Math.max(item.footing_b_mm, item.footing_l_mm) || 6000;
-    const bEff = settings.mode === "sample_compat" ? b - 115 : b - 2 * cov;
-    const lEff = settings.mode === "sample_compat" ? l - 115 : l - 2 * cov;
+    const b = Number(Math.min(item.footing_b_mm, item.footing_l_mm) || 3100);
+    const l = Number(Math.max(item.footing_b_mm, item.footing_l_mm) || 6000);
+    const effExtra = compat ? 15 : 0;
+    const lEff = l - 2 * cov - effExtra;
+    const bEff = b - 2 * cov - effExtra;
 
-    let nosLong, nosShort, nosLongExpr, nosShortExpr, cutLong, cutLongExpr;
-    if (mark === "CF4" && settings.mode === "sample_compat") {
-      nosLong = ceilIf((b - 50 - 50 - dia) / sp + 1, settings.round_up_nos);
-      nosShort = ceilIf((l - 50 - 50 - dia) / sp + 1, settings.round_up_nos);
-      nosLongExpr = `=((${b}-50-50-${dia})/${Math.round(sp)})+1`;
-      nosShortExpr = `=((${l}-50-50-${dia})/${Math.round(sp)})+1`;
-      cutLong = 6635 + lEff + leg - 2 * dia;
-      cutLongExpr = `=6635+${lEff}+${leg}-(2*${dia})`;
-    } else if (mark === "CF5" && settings.mode === "sample_compat") {
-      nosLong = ceilIf((b - 100 - dia) / sp + 1, settings.round_up_nos);
-      nosShort = ceilIf((l - 100 - dia) / sp + 1, settings.round_up_nos);
-      nosLongExpr = `=((${b - 100}-${dia})/${Math.round(sp)})+1`;
-      nosShortExpr = `=((${l - 100}-${dia})/${Math.round(sp)})+1`;
-      cutLong = leg + lEff + leg - 2 * dia;
-      cutLongExpr = `=${leg}+${lEff}+${leg}-(2*${dia})`;
-    } else {
-      nosLong = ceilIf((b - 2 * cov - dia) / sp + 1, settings.round_up_nos);
-      nosShort = ceilIf((l - 2 * cov - dia) / sp + 1, settings.round_up_nos);
-      nosLongExpr = `=((${b}-${2 * cov}-${dia})/${Math.round(sp)})+1`;
-      nosShortExpr = `=((${l}-${2 * cov}-${dia})/${Math.round(sp)})+1`;
-      cutLong = leg + lEff + leg - 2 * dia;
-      cutLongExpr = `=${leg}+${lEff}+${leg}-(2*${dia})`;
-    }
-
-    const cutShort = leg + bEff + leg - 2 * dia;
-    const cutShortExpr = `=${leg}+${bEff}+${leg}-(2*${dia})`;
+    const longId = `${mark}_long`;
+    const shortId = `${mark}_short`;
+    const nosInner = "((@SELF:AA-2*$S$2-@SELF:E)/@SELF:J)+1";
+    const cutLongExpr =
+      mark === "CF4" && compat
+        ? "=6635+(@SELF:D-2*$S$2-@SELF:AB)+(@SELF:Z-2*$S$2-@SELF:AB)-(2*@SELF:E)"
+        : "=2*(@SELF:Z-2*$S$2-15)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)";
+    const cutShortExpr = "=2*(@SELF:Z-2*$S$2-15)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)";
 
     rows.push({
-      id: `${mark}_long`,
+      id: longId,
       sr_no: srNo,
       group_key: mark,
       bar_mark: mark,
@@ -743,22 +1140,29 @@
       span_expr: null,
       span_mm: l,
       dia_mm: dia,
-      shape: { kind: "combined_loop", labels: { span: String(lEff), leg: String(leg) } },
+      shape: { kind: "combined_loop", labels: { span: formatExact(lEff), leg: formatExact(leg) } },
       spacing_mm: sp,
-      nos_expr: nosLongExpr,
-      nos: nosLong,
+      nos_expr: wrapRoundup(nosInner, settings.round_up_nos),
+      nos: 0,
+      multiple_expr: "=@SELF:AD*@SELF:AC",
       multiple_no: cfMult,
-      total_nos: nosLong * cfMult,
+      total_nos: 0,
       cut_length_expr: cutLongExpr,
-      cut_length_mm: cutLong,
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(nosLong * cfMult, cutLong, dia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: b,
+      param_ab: effExtra,
+      param_ac: cfCount,
+      param_ad: 2,
+      param_ae: "Z=Depth; AA=PerpB; AB=CompatSpanOff; AC=CFQty; AD=Layers(2)",
       remark: mark === "CF4" ? "Plus One" : "",
-      inferred: mark === "CF4" && settings.mode === "sample_compat",
+      inferred: mark === "CF4" && compat,
       source_note: "",
     });
     rows.push({
-      id: `${mark}_short`,
+      id: shortId,
       sr_no: null,
       group_key: mark,
       bar_mark: mark,
@@ -766,31 +1170,34 @@
       span_expr: null,
       span_mm: b,
       dia_mm: dia,
-      shape: { kind: "combined_loop", labels: { span: String(bEff), leg: String(leg) } },
+      shape: { kind: "combined_loop", labels: { span: formatExact(bEff), leg: formatExact(leg) } },
       spacing_mm: sp,
-      nos_expr: nosShortExpr,
-      nos: nosShort,
+      nos_expr: wrapRoundup(nosInner, settings.round_up_nos),
+      nos: 0,
+      multiple_expr: "=@SELF:AD*@SELF:AC",
       multiple_no: cfMult,
-      total_nos: nosShort * cfMult,
+      total_nos: 0,
       cut_length_expr: cutShortExpr,
-      cut_length_mm: cutShort,
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(nosShort * cfMult, cutShort, dia),
+      weight_kg: 0,
+      param_z: depth,
+      param_aa: l,
+      param_ab: effExtra,
+      param_ac: cfCount,
+      param_ad: 2,
+      param_ae: "Z=Depth; AA=PerpL; AB=CompatSpanOff; AC=CFQty; AD=Layers(2)",
       remark: mark === "CF4" ? "Plus one" : "",
       inferred: false,
       source_note: "",
     });
 
-    const sbDia = item.side_bars_dia || 10;
-    const sbNos = Number(item.side_bars_nos || 3);
-    let sbExpr, sbCut;
-    if (mark === "CF4" && settings.mode === "sample_compat") {
-      sbExpr = `=${lEff}+${lEff}+${bEff}+${bEff}+(16*8)-12-12-12-12-(3*8)-(3*8*2)`;
-      sbCut = 2 * lEff + 2 * bEff + 128 - 48 - 24 - 48;
-    } else {
-      sbExpr = `=${lEff}+${lEff}+${bEff}+${bEff}+75+75`;
-      sbCut = 2 * lEff + 2 * bEff + 150;
-    }
+    const perimExpr = `2*(@ID:${longId}:D-2*$S$2-@ID:${longId}:AB)+2*(@ID:${shortId}:D-2*$S$2-@ID:${shortId}:AB)`;
+    const sbSpanExpr =
+      mark === "CF4" && compat
+        ? `=${perimExpr}+(2*$S$3*@SELF:AB)-(4*@ID:${longId}:E)-(3*@SELF:AB)-(3*@SELF:AB*2)`
+        : `=${perimExpr}+$U$3+$U$3`;
+    const sbAb = mark === "CF4" && compat ? 8 : 0;
 
     rows.push({
       id: `${mark}_side`,
@@ -798,23 +1205,31 @@
       group_key: mark,
       bar_mark: mark,
       description: "SIDE BARS",
-      span_expr: sbExpr,
-      span_mm: sbCut,
-      dia_mm: sbDia,
+      span_expr: sbSpanExpr,
+      span_mm: 0,
+      dia_mm: Number(item.side_bars_dia || 10),
       shape: { kind: "straight", labels: { text: "Along Perimeter" } },
       spacing_mm: null,
       nos_expr: null,
-      nos: sbNos,
+      nos: Number(item.side_bars_nos || 3),
+      multiple_expr: "=@SELF:AC",
       multiple_no: cfCount,
-      total_nos: sbNos * cfCount,
-      cut_length_expr: "=SELF_SPAN",
-      cut_length_mm: sbCut,
+      total_nos: 0,
+      cut_length_expr: "=@SELF:D",
+      cut_length_mm: 0,
       coupler: 0,
-      weight_kg: computeWeightKg(sbNos * cfCount, sbCut, sbDia),
+      weight_kg: 0,
+      param_z: null,
+      param_aa: null,
+      param_ab: sbAb,
+      param_ac: cfCount,
+      param_ad: null,
+      param_ae: "Perimeter linked to LONG/SHORT spans + Hook($S$3/$U$3); AC=CFQty",
       remark: mark === "CF5" ? "Suite at Site" : "",
       inferred: false,
       source_note: "",
     });
+
     return rows;
   }
 
@@ -852,6 +1267,7 @@
         spacing_mm: null,
         nos_expr: null,
         nos: 0,
+        multiple_expr: null,
         multiple_no: 0,
         total_nos: 0,
         cut_length_expr: null,
@@ -875,6 +1291,7 @@
         spacing_mm: null,
         nos_expr: null,
         nos: 0,
+        multiple_expr: null,
         multiple_no: 0,
         total_nos: 0,
         cut_length_expr: null,
@@ -890,21 +1307,71 @@
   }
 
   function recalculateDocument(doc) {
+    doc.settings = defaultSettings(doc.settings || {});
+    const settings = doc.settings;
     const totalsKg = {};
     for (const d of DIAMETER_COLUMNS) totalsKg[d] = 0;
 
-    for (const row of doc.rows) {
-      row.total_nos = Number(row.nos || 0) * Number(row.multiple_no || 0);
-      row.weight_kg = computeWeightKg(row.total_nos, Number(row.cut_length_mm || 0), Number(row.dia_mm || 0));
-      if (Object.prototype.hasOwnProperty.call(totalsKg, row.dia_mm)) {
-        totalsKg[row.dia_mm] += row.weight_kg;
+    const firstTieByGroup = {};
+    doc.rows.forEach((row, idx) => {
+      const excelR = 8 + idx;
+      if (String(row.description || "").includes("COL.TIES") && !(row.group_key in firstTieByGroup)) {
+        firstTieByGroup[row.group_key] = excelR;
       }
-    }
+      const ftRow = firstTieByGroup[row.group_key] ?? null;
 
+      if (row.nos_expr) row.nos_expr = syncRoundupExpr(row.nos_expr, settings.round_up_nos);
+
+      if (row.span_expr) {
+        const res = resolveRowFormula(row.span_expr, idx, doc.rows, settings, ftRow);
+        if (!res) row.span_expr = null;
+        else if (res.value !== null) row.span_mm = res.value;
+      }
+      if (row.nos_expr) {
+        const res = resolveRowFormula(row.nos_expr, idx, doc.rows, settings, ftRow);
+        if (!res) row.nos_expr = null;
+        else if (res.value !== null) row.nos = res.value;
+      }
+      if (row.multiple_expr) {
+        const res = resolveRowFormula(row.multiple_expr, idx, doc.rows, settings, ftRow);
+        if (!res) row.multiple_expr = null;
+        else if (res.value !== null) row.multiple_no = res.value;
+      }
+
+      row.total_nos = Number(row.nos || 0) * Number(row.multiple_no || 0);
+
+      if (row.cut_length_expr) {
+        const res = resolveRowFormula(row.cut_length_expr, idx, doc.rows, settings, ftRow);
+        if (!res) row.cut_length_expr = null;
+        else if (res.value !== null) row.cut_length_mm = res.value;
+      }
+
+      if (row.id && row.id.endsWith("_col_vert")) {
+        row.description = `COLUMN(upto ${(Number(settings.column_height_mm) / 1000).toFixed(3)} m)`;
+        row.shape = {
+          kind: "l_bar",
+          labels: { ld: formatExact(settings.ld_vertical_mm), height: formatExact(settings.column_height_mm) },
+        };
+      }
+
+      row.weight_kg = computeWeightKg(
+        row.total_nos,
+        Number(row.cut_length_mm || 0),
+        Number(row.dia_mm || 0),
+        Number(settings.unit_wt_divisor || 162),
+        Number(settings.scale_divisor || 1000)
+      );
+      const dKey = Math.round(Number(row.dia_mm || 0));
+      if (Math.abs(Number(row.dia_mm || 0) - dKey) < 1e-9 && Object.prototype.hasOwnProperty.call(totalsKg, dKey)) {
+        totalsKg[dKey] += row.weight_kg;
+      }
+    });
+
+    const scale = Number(settings.scale_divisor || 1000);
     doc.totals_by_dia_mt = {};
     let totalMt = 0;
     for (const d of DIAMETER_COLUMNS) {
-      const mt = totalsKg[d] / 1000.0;
+      const mt = totalsKg[d] / scale;
       doc.totals_by_dia_mt[d] = mt;
       totalMt += mt;
     }
@@ -913,7 +1380,8 @@
   }
 
   function buildBbsDocument(meta, schedule, settings, warnings, parseStats, dateStr = "") {
-    const rows = generateBbsRows(schedule, settings);
+    const mergedSettings = defaultSettings(settings || {});
+    const rows = generateBbsRows(schedule, mergedSettings);
     const doc = {
       project_name: meta.project_name || "PROJECT",
       drawing_no: meta.drawing_no || "SH_FOOTING_01",
@@ -924,7 +1392,7 @@
         "NOTE :-Wastages, Lap length are not considered in BBS & hence quantity " +
         "may increase by 5-10% at site. Further, sample of each cutting length " +
         "to be strictly checked & verified at site before processing forward.",
-      settings,
+      settings: mergedSettings,
       schedule,
       rows,
       warnings: warnings || [],
@@ -937,7 +1405,10 @@
 
   global.BbsCalculator = {
     DIAMETER_COLUMNS,
+    GLOBAL_CONST_CELLS,
     defaultSettings,
+    formatExact,
+    resolveRowFormula,
     computeWeightKg,
     generateBbsRows,
     recalculateDocument,

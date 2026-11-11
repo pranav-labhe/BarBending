@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline Bar Bending Schedule (BBS) Generator</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --ink: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --accent: #1e40af;
+      --accent-soft: #dbeafe;
+      --success: #15803d;
+      --success-bg: #dcfce7;
+      --warn-bg: #fef9c3;
+      --warn-border: #eab308;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 13px;
+    }
+    header {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .pill {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #14532d;
+      color: #bbf7d0;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    button, select, input[type="number"], input[type="text"] {
+      font: inherit;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      background: #fff;
+      color: var(--ink);
+    }
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8;
+    }
+    button.export {
+      background: #16a34a;
+      color: #fff;
+      border-color: #15803d;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    main {
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .upload-zone {
+      border: 2px dashed #94a3b8;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      background: #f8fafc;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .upload-zone.dragover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+    .kpi {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .kpi .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .kpi .val { font-size: 17px; font-weight: 700; margin-top: 2px; }
+    .kpi.highlight { background: var(--success-bg); border-color: #86efac; }
+    .settings-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .field label { font-size: 11px; color: var(--muted); font-weight: 600; }
+    .field input, .field select { padding: 4px 8px; min-width: 90px; }
+    .split {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .split.preview-hidden {
+      grid-template-columns: 1fr;
+    }
+    @media (max-width: 1100px) {
+      .split { grid-template-columns: 1fr; }
+      .preview-box { position: static; max-height: 45vh; }
+      .table-wrap { max-height: none; -webkit-overflow-scrolling: touch; }
+    }
+    @media (max-width: 768px) {
+      input, select, td input { font-size: 16px; }
+    }
+    .preview-box {
+      position: sticky;
+      top: 10px;
+      max-height: 80vh;
+      overflow: auto;
+    }
+    .preview-box img {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: zoom-in;
+    }
+    .preview-box img.zoomed {
+      width: 240%;
+      max-width: none;
+      cursor: zoom-out;
+    }
+    .table-wrap {
+      overflow: auto;
+      max-height: 76vh;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #e2e8f0;
+      z-index: 2;
+      padding: 7px 6px;
+      text-align: center;
+      border-bottom: 2px solid #94a3b8;
+      border-right: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td {
+      padding: 4px 5px;
+      border-bottom: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+      vertical-align: middle;
+    }
+    tr.inferred { background: var(--warn-bg); }
+    tr:hover { background: #f1f5f9; }
+    td input {
+      width: 100%;
+      padding: 3px 5px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    td input:hover, td input:focus {
+      border-color: #94a3b8;
+      background: #fff;
+      outline: none;
+    }
+    td.num input { text-align: right; }
+    .warn-list {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+    .badge-inf {
+      background: #fef08a;
+      color: #854d0e;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .shape-cell { min-width: 118px; text-align: center; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Bar Bending Schedule (BBS) Generator</h1>
+    <span class="pill">100% OFFLINE • NO EXTERNAL API</span>
+  </div>
+  <div class="toolbar">
+    <button id="togglePreviewBtn" type="button" disabled>Hide Drawing Preview</button>
+    <button id="addRowBtn" type="button" disabled>+ Add Custom Row</button>
+    <button id="exportBtn" class="export" type="button" disabled>Export .xlsx (Formulas + Shapes)</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel upload-zone" id="dropZone">
+    <div style="text-align:left">
+      <strong>Upload CAD Structural PDF</strong>
+      <div style="color:var(--muted);font-size:12px;">
+        Extracts Schedule Table, Foundation Level Plan counts (box footings vs. combined footings), Notes &amp; Sections locally via PyMuPDF.
+      </div>
+    </div>
+    <div class="toolbar">
+      <select id="uploadMode">
+        <option value="sample_compat" selected>Sample-Compatible Rules</option>
+        <option value="strict_geometry">Strict Uniform Geometry</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;">
+        <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
+      </label>
+      <input type="file" id="pdfInput" accept=".pdf,application/pdf" />
+      <button id="parseBtn" class="primary" type="button">Parse PDF</button>
+    </div>
+  </section>
+
+  <section id="workspace" class="hidden" style="display:flex;flex-direction:column;gap:12px;">
+    <div id="warnBox" class="warn-list hidden"></div>
+
+    <div class="panel">
+      <div class="settings-bar" id="metaBar">
+        <div class="field" style="flex:1;min-width:160px;">
+          <label>Project</label>
+          <input type="text" id="metaProject" />
+        </div>
+        <div class="field" style="min-width:140px;">
+          <label>Drawing No</label>
+          <input type="text" id="metaDrawing" />
+        </div>
+        <div class="field" style="min-width:140px;">
+          <label>Location</label>
+          <input type="text" id="metaLocation" />
+        </div>
+        <div class="field" style="flex:1;min-width:180px;">
+          <label>Structure</label>
+          <input type="text" id="metaStructure" />
+        </div>
+        <div class="field">
+          <label>Footing Cover (mm)</label>
+          <input type="number" id="setFootCov" style="width:80px;" />
+        </div>
+        <div class="field">
+          <label>Col Cover (mm)</label>
+          <input type="number" id="setColCov" style="width:80px;" />
+        </div>
+        <div class="field">
+          <label>Col Height (mm)</label>
+          <input type="number" id="setColHt" style="width:90px;" />
+        </div>
+        <div class="field">
+          <label>Rule Mode</label>
+          <select id="setMode">
+            <option value="sample_compat">Sample-Compatible</option>
+            <option value="strict_geometry">Strict Geometry</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Round Up</label>
+          <select id="setRoundUp">
+            <option value="false">Exact</option>
+            <option value="true">ROUNDUP</option>
+          </select>
+        </div>
+        <button id="rebuildBtn" class="primary" type="button">Rebuild Rules</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="split" id="splitPane">
+      <div class="panel preview-box" id="previewPane">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong>PDF Drawing Reference (Click to Zoom)</strong>
+          <span id="planStatsLabel" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <img id="previewImg" alt="Uploaded PDF Drawing Preview" />
+        <div id="planAudit" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
+      </div>
+
+      <div class="panel" style="padding:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:0 4px;">
+          <strong>Editable Bar Bending Schedule (<span id="rowCountLabel">0</span> rows)</strong>
+          <span style="font-size:11px;color:var(--muted);">Yellow rows = inferred/derived from plan or sections — verify before export.</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Sr</th>
+                <th>Bar Mark</th>
+                <th>Description</th>
+                <th>Span (mm)</th>
+                <th>Dia</th>
+                <th>Shape</th>
+                <th>Spacing</th>
+                <th>Nos</th>
+                <th>Mult</th>
+                <th>Total Nos</th>
+                <th>Cut Len (mm)</th>
+                <th>Weight (kg)</th>
+                <th>Remark</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="bbsTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+let currentDoc = null;
+let previewVisible = true;
+
+const $ = (id) => document.getElementById(id);
+
+function renderShapeSvg(shape) {
+  const k = (shape && shape.kind) || "straight";
+  const lbl = (shape && shape.labels) || {};
+  if (k === "u_bar") {
+    return `<svg width="110" height="30" viewBox="0 0 110 30">
+      <polyline points="12,5 12,24 94,24 94,5" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <text x="53" y="20" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.span || ""}</text>
+      <text x="98" y="16" font-size="9" fill="#0f172a">${lbl.leg || ""}</text>
+    </svg>`;
+  }
+  if (k === "combined_loop") {
+    return `<svg width="110" height="32" viewBox="0 0 110 32">
+      <polyline points="24,6 10,6 10,25 96,25 96,6 82,6" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <line x1="10" y1="9" x2="96" y2="9" stroke="#1e40af" stroke-width="1.3"/>
+      <text x="53" y="21" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.span || ""}</text>
+      <text x="99" y="18" font-size="9" fill="#0f172a">${lbl.leg || ""}</text>
+    </svg>`;
+  }
+  if (k === "l_bar") {
+    return `<svg width="110" height="30" viewBox="0 0 110 30">
+      <polyline points="42,25 58,25 58,4" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <text x="64" y="15" font-size="9" fill="#0f172a">${lbl.height || ""}</text>
+      <text x="36" y="27" text-anchor="end" font-size="9" fill="#0f172a">${lbl.ld || ""}</text>
+    </svg>`;
+  }
+  if (k === "stirrup_rect") {
+    return `<svg width="110" height="30" viewBox="0 0 110 30">
+      <rect x="24" y="5" width="46" height="20" rx="4" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <line x1="24" y1="6" x2="32" y2="13" stroke="#1e40af" stroke-width="1.8"/>
+      <line x1="27" y1="4" x2="35" y2="11" stroke="#1e40af" stroke-width="1.8"/>
+      <text x="74" y="18" font-size="9" fill="#0f172a">${lbl.b || ""}</text>
+      <text x="47" y="22" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.a || ""}</text>
+    </svg>`;
+  }
+  if (k === "center_link") {
+    return `<svg width="110" height="30" viewBox="0 0 110 30">
+      <line x1="50" y1="5" x2="50" y2="25" stroke="#1e40af" stroke-width="2"/>
+      <path d="M44,8 A4,4 0 0 1 50,5 M50,25 A4,4 0 0 0 56,22" fill="none" stroke="#1e40af" stroke-width="1.8"/>
+      <text x="58" y="18" font-size="9" fill="#0f172a">${lbl.a || ""}</text>
+    </svg>`;
+  }
+  if (k === "chair") {
+    return `<svg width="110" height="28" viewBox="0 0 110 28">
+      <polyline points="14,22 30,22 30,7 78,7 78,22 94,22" fill="none" stroke="#1e40af" stroke-width="2"/>
+    </svg>`;
+  }
+  return `<svg width="110" height="26" viewBox="0 0 110 26">
+    <line x1="10" y1="18" x2="100" y2="18" stroke="#1e40af" stroke-width="2"/>
+    <text x="55" y="13" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.text || ""}</text>
+  </svg>`;
+}
+
+function renderKpis(doc) {
+  const dias = [8, 10, 12, 16, 20, 25, 32];
+  let html = `
+    <div class="kpi highlight">
+      <div class="lbl">Grand Total Weight</div>
+      <div class="val">${doc.total_weight_mt.toFixed(3)} MT (${Math.round(doc.total_weight_mt * 1000).toLocaleString()} kg)</div>
+    </div>
+  `;
+  for (const d of dias) {
+    const val = (doc.totals_by_dia_mt && doc.totals_by_dia_mt[d]) || 0;
+    if (val > 0 || d <= 20) {
+      html += `<div class="kpi"><div class="lbl">${d} mm</div><div class="val">${val.toFixed(3)} MT</div></div>`;
+    }
+  }
+  $("kpiGrid").innerHTML = html;
+}
+
+function renderDocument(doc, previewUrl) {
+  currentDoc = doc;
+  $("workspace").classList.remove("hidden");
+  $("exportBtn").disabled = false;
+  $("addRowBtn").disabled = false;
+  $("togglePreviewBtn").disabled = false;
+
+  $("metaProject").value = doc.project_name || "";
+  $("metaDrawing").value = doc.drawing_no || "";
+  $("metaLocation").value = doc.location || "";
+  $("metaStructure").value = doc.structure || "";
+  $("setFootCov").value = doc.settings.footing_cover_mm;
+  $("setColCov").value = doc.settings.column_cover_mm;
+  $("setColHt").value = doc.settings.column_height_mm;
+  $("setMode").value = doc.settings.mode;
+  $("setRoundUp").value = String(doc.settings.round_up_nos);
+
+  if (previewUrl) {
+    $("previewImg").src = previewUrl;
+  }
+
+  const st = doc.parse_stats || {};
+  $("planStatsLabel").textContent = st.total_tokens ? `${st.total_tokens} CAD tokens` : "";
+  if (st.box_counts || st.cf_counts) {
+    $("planAudit").innerHTML =
+      `<div><strong>Detected Box Footings:</strong> ${JSON.stringify(st.box_counts || {})}</div>` +
+      `<div><strong>Detected Total Columns:</strong> ${JSON.stringify(st.total_col_counts || {})}</div>` +
+      `<div><strong>Detected Combined Footings:</strong> ${JSON.stringify(st.cf_counts || {})}</div>`;
+  }
+
+  if (doc.warnings && doc.warnings.length > 0) {
+    $("warnBox").classList.remove("hidden");
+    $("warnBox").innerHTML = "<strong>Review Notes:</strong> " + doc.warnings.map(w => `<div>• ${w}</div>`).join("");
+  } else {
+    $("warnBox").classList.add("hidden");
+  }
+
+  renderKpis(doc);
+  $("rowCountLabel").textContent = doc.rows.length;
+
+  const tbody = $("bbsTbody");
+  tbody.innerHTML = "";
+  doc.rows.forEach((row, idx) => {
+    const tr = document.createElement("tr");
+    if (row.inferred) tr.classList.add("inferred");
+    tr.innerHTML = `
+      <td style="text-align:center;font-weight:600;">${row.sr_no ?? ""}</td>
+      <td><input type="text" data-idx="${idx}" data-field="bar_mark" value="${escapeHtml(row.bar_mark)}" style="min-width:115px"/></td>
+      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:165px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ''}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="span_mm" value="${Math.round(row.span_mm)}" style="width:72px"/></td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="dia_mm" value="${row.dia_mm}" style="width:52px"/></td>
+      <td class="shape-cell">${renderShapeSvg(row.shape)}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="spacing_mm" value="${row.spacing_mm ?? ""}" style="width:60px"/></td>
+      <td class="num"><input type="number" step="0.01" data-idx="${idx}" data-field="nos" value="${Number(row.nos.toFixed(3))}" style="width:68px"/></td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="multiple_no" value="${Number(row.multiple_no.toFixed(2))}" style="width:58px"/></td>
+      <td style="text-align:right;font-weight:600;padding-right:8px;">${Number(row.total_nos.toFixed(2))}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="cut_length_mm" value="${Math.round(row.cut_length_mm)}" style="width:74px"/></td>
+      <td style="text-align:right;font-weight:600;padding-right:8px;">${row.weight_kg.toFixed(3)}</td>
+      <td><input type="text" data-idx="${idx}" data-field="remark" value="${escapeHtml(row.remark)}" style="min-width:105px"/></td>
+      <td><button type="button" onclick="deleteRow(${idx})" title="Remove row" style="padding:2px 6px;color:#b91c1c;">×</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll("input").forEach((inp) => {
+    inp.addEventListener("change", onCellEdit);
+  });
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function syncMetaFields() {
+  if (!currentDoc) return;
+  currentDoc.project_name = $("metaProject").value;
+  currentDoc.drawing_no = $("metaDrawing").value;
+  currentDoc.location = $("metaLocation").value;
+  currentDoc.structure = $("metaStructure").value;
+  currentDoc.settings.footing_cover_mm = Number($("setFootCov").value) || 50;
+  currentDoc.settings.column_cover_mm = Number($("setColCov").value) || 40;
+  currentDoc.settings.column_height_mm = Number($("setColHt").value) || 4550;
+  currentDoc.settings.mode = $("setMode").value;
+  currentDoc.settings.round_up_nos = $("setRoundUp").value === "true";
+}
+
+async function onCellEdit(e) {
+  const idx = Number(e.target.dataset.idx);
+  const field = e.target.dataset.field;
+  const row = currentDoc.rows[idx];
+  if (!row) return;
+
+  if (field === "bar_mark" || field === "description" || field === "remark") {
+    row[field] = e.target.value;
+  } else {
+    const val = e.target.value === "" ? null : Number(e.target.value);
+    row[field] = val ?? 0;
+    if (field === "span_mm") row.span_expr = null;
+    if (field === "nos") row.nos_expr = null;
+    if (field === "cut_length_mm") row.cut_length_expr = null;
+  }
+  syncMetaFields();
+  const resp = await fetch("/api/recalculate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentDoc),
+  });
+  if (resp.ok) {
+    renderDocument(await resp.json(), null);
+  }
+}
+
+async function deleteRow(idx) {
+  currentDoc.rows.splice(idx, 1);
+  const resp = await fetch("/api/recalculate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentDoc),
+  });
+  if (resp.ok) renderDocument(await resp.json(), null);
+}
+
+$("addRowBtn").addEventListener("click", async () => {
+  if (!currentDoc) return;
+  currentDoc.rows.push({
+    id: "custom_" + Date.now(),
+    sr_no: null,
+    group_key: "CUSTOM",
+    bar_mark: "Custom",
+    description: "EXTRA BAR",
+    span_mm: 1000,
+    dia_mm: 12,
+    shape: { kind: "straight", labels: { text: "Custom" } },
+    spacing_mm: null,
+    nos: 1,
+    multiple_no: 1,
+    total_nos: 1,
+    cut_length_mm: 1000,
+    coupler: 0,
+    weight_kg: 0,
+    remark: "",
+    inferred: false,
+    source_note: "Manual row",
+  });
+  const resp = await fetch("/api/recalculate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentDoc),
+  });
+  if (resp.ok) renderDocument(await resp.json(), null);
+});
+
+$("rebuildBtn").addEventListener("click", async () => {
+  if (!currentDoc) return;
+  syncMetaFields();
+  const resp = await fetch("/api/rebuild", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentDoc),
+  });
+  if (resp.ok) renderDocument(await resp.json(), null);
+});
+
+$("parseBtn").addEventListener("click", async () => {
+  const file = $("pdfInput").files[0];
+  if (!file) {
+    alert("Please choose a PDF file first.");
+    return;
+  }
+  await parseSelectedFile(file);
+});
+
+async function parseSelectedFile(file) {
+  const btn = $("parseBtn");
+  btn.disabled = true;
+  btn.textContent = "Parsing...";
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("mode", $("uploadMode").value);
+    fd.append("round_up_nos", $("uploadRoundUp").checked ? "true" : "false");
+    const resp = await fetch("/api/parse", { method: "POST", body: fd });
+    const data = await resp.json();
+    if (!resp.ok) {
+      alert(data.detail || "Failed to parse PDF.");
+      return;
+    }
+    renderDocument(data.document, data.preview_image);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Parse PDF";
+  }
+}
+
+$("exportBtn").addEventListener("click", async () => {
+  if (!currentDoc) return;
+  syncMetaFields();
+
+  // iOS Safari reliably triggers native file download dialog via form POST attachment response
+  const isIOS = /iP(hone|ad|od)/.test(navigator.platform) ||
+    (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+  if (isIOS) {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/api/export-form";
+    form.style.display = "none";
+    const inp = document.createElement("input");
+    inp.type = "hidden";
+    inp.name = "payload";
+    inp.value = JSON.stringify(currentDoc);
+    form.appendChild(inp);
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    return;
+  }
+
+  const resp = await fetch("/api/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(currentDoc),
+  });
+  if (!resp.ok) {
+    alert("Export failed.");
+    return;
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(currentDoc.drawing_no || "BBS").replace(/[^A-Za-z0-9_-]/g, "_")}_BBS.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+});
+
+$("togglePreviewBtn").addEventListener("click", () => {
+  previewVisible = !previewVisible;
+  $("previewPane").classList.toggle("hidden", !previewVisible);
+  $("splitPane").classList.toggle("preview-hidden", !previewVisible);
+  $("togglePreviewBtn").textContent = previewVisible ? "Hide Drawing Preview" : "Show Drawing Preview";
+});
+
+$("previewImg").addEventListener("click", () => {
+  $("previewImg").classList.toggle("zoomed");
+});
+
+const dz = $("dropZone");
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("dragover"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+dz.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  dz.classList.remove("dragover");
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    $("pdfInput").files = e.dataTransfer.files;
+    await parseSelectedFile(f);
+  }
+});
+</script>
+</body>
+</html>

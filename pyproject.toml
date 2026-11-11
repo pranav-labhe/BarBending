@@ -1,0 +1,9 @@
+[project]
+name = "bar-bending-schedule"
+version = "1.0.0"
+description = "100% offline CAD PDF to Bar Bending Schedule (.xlsx) generator"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

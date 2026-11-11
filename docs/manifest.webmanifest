@@ -1,0 +1,10 @@
+{
+  "name": "Bar Bending Schedule (BBS) Generator",
+  "short_name": "BBS Offline",
+  "description": "100% browser-local CAD PDF to Bar Bending Schedule (.xlsx) generator.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a"
+}

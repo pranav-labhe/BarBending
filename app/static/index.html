@@ -1,343 +1,858 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Offline Bar Bending Schedule (BBS) Generator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Bar Bending Studio — Offline CAD BBS Server</title>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("bbs_theme");
+        if (saved === "dark" || saved === "light") {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch (_) {}
+    })();
+  </script>
   <style>
     :root {
+      color-scheme: light;
       --bg: #f1f5f9;
+      --bg-grid: rgba(15, 23, 42, 0.045);
       --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --surface-elevated: #ffffff;
       --ink: #0f172a;
-      --muted: #475569;
-      --border: #cbd5e1;
-      --accent: #1e40af;
-      --accent-soft: #dbeafe;
-      --success: #15803d;
-      --success-bg: #dcfce7;
-      --warn-bg: #fef9c3;
+      --ink-secondary: #334155;
+      --muted: #64748b;
+      --border: #dbe2ea;
+      --border-strong: #cbd5e1;
+      --header-bg: rgba(11, 17, 32, 0.96);
+      --header-ink: #f8fafc;
+      --header-border: rgba(148, 163, 184, 0.16);
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: rgba(37, 99, 235, 0.1);
+      --export: #059669;
+      --export-hover: #047857;
+      --export-soft: rgba(5, 150, 105, 0.12);
+      --warn-bg: #fefce8;
+      --warn-row-bg: #fef9c3;
       --warn-border: #eab308;
+      --warn-ink: #854d0e;
+      --warn-chip: #fef08a;
+      --danger: #dc2626;
+      --danger-soft: rgba(220, 38, 38, 0.1);
+      --th-bg: #f1f5f9;
+      --row-hover: #f8fafc;
+      --input-bg: #ffffff;
+      --shape-stroke: #1d4ed8;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 8px 24px -12px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #070b14;
+      --bg-grid: rgba(148, 163, 184, 0.065);
+      --surface: #111827;
+      --surface-subtle: #0d1322;
+      --surface-elevated: #162033;
+      --ink: #f1f5f9;
+      --ink-secondary: #cbd5e1;
+      --muted: #94a3b8;
+      --border: #1f2937;
+      --border-strong: #334155;
+      --header-bg: rgba(7, 11, 20, 0.94);
+      --header-ink: #f8fafc;
+      --header-border: rgba(148, 163, 184, 0.14);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-soft: rgba(59, 130, 246, 0.16);
+      --export: #10b981;
+      --export-hover: #059669;
+      --export-soft: rgba(16, 185, 129, 0.14);
+      --warn-bg: rgba(245, 158, 11, 0.1);
+      --warn-row-bg: rgba(245, 158, 11, 0.13);
+      --warn-border: #d97706;
+      --warn-ink: #fcd34d;
+      --warn-chip: rgba(245, 158, 11, 0.24);
+      --danger: #f87171;
+      --danger-soft: rgba(248, 113, 113, 0.14);
+      --th-bg: #162033;
+      --row-hover: rgba(148, 163, 184, 0.07);
+      --input-bg: #0b1120;
+      --shape-stroke: #60a5fa;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      background: var(--bg);
-      color: var(--ink);
+      font-family: var(--font-sans);
       font-size: 13px;
+      line-height: 1.45;
+      color: var(--ink);
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(to right, var(--bg-grid) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--bg-grid) 1px, transparent 1px);
+      background-size: 24px 24px;
+      -webkit-font-smoothing: antialiased;
     }
-    header {
-      background: #0f172a;
-      color: #f8fafc;
-      padding: 12px 20px;
+
+    .mono, .num, td.num input, .kpi .val, .audit-chip {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--header-bg);
+      color: var(--header-ink);
+      border-bottom: 1px solid var(--header-border);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 10px 18px;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
     }
-    .brand h1 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 600;
-    }
+    .brand-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .brand-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .brand h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .brand-sub { font-size: 11px; color: #94a3b8; }
     .pill {
-      display: inline-block;
-      padding: 3px 9px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      background: #14532d;
-      color: #bbf7d0;
-    }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
+      display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 5px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: rgba(16, 185, 129, 0.16);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.28);
     }
-    button, select, input[type="number"], input[type="text"] {
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+    button, select, input[type="number"], input[type="text"], input[type="search"] {
       font: inherit;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
+      color: var(--ink);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease;
     }
+    select, input[type="number"], input[type="text"], input[type="search"] { padding: 6px 9px; }
+    select:focus, input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
     button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 12px;
       cursor: pointer;
       font-weight: 600;
-      background: #fff;
+      font-size: 12.5px;
+      background: var(--surface);
       color: var(--ink);
+      box-shadow: var(--shadow-sm);
+      white-space: nowrap;
     }
-    button.primary {
-      background: #2563eb;
-      color: #fff;
-      border-color: #1d4ed8;
+    button:hover:not(:disabled) { border-color: var(--muted); background: var(--surface-subtle); }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+    .topbar button.ghost-dark {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.16);
+      color: #f8fafc;
+      box-shadow: none;
     }
-    button.export {
-      background: #16a34a;
-      color: #fff;
-      border-color: #15803d;
+    .topbar button.ghost-dark:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.28);
     }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary { background: var(--primary); color: #fff; border-color: transparent; }
+    button.primary:hover:not(:disabled) { background: var(--primary-hover); }
+    button.export { background: var(--export); color: #fff; border-color: transparent; }
+    button.export:hover:not(:disabled) { background: var(--export-hover); }
+    button svg { width: 15px; height: 15px; flex-shrink: 0; }
+
     main {
-      padding: 14px 18px;
+      max-width: 1720px;
+      margin: 0 auto;
+      padding: 16px 18px 28px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
     }
+
     .panel {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-md);
     }
-    .upload-zone {
-      border: 2px dashed #94a3b8;
-      border-radius: 8px;
-      padding: 16px;
-      text-align: center;
-      background: #f8fafc;
+    .panel-header {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
+      margin-bottom: 12px;
     }
-    .upload-zone.dragover {
-      border-color: #2563eb;
-      background: #eff6ff;
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
     }
+    .panel-kicker {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .toast-region {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 380px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      background: var(--surface-elevated);
+      color: var(--ink);
+      border: 1px solid var(--border-strong);
+      border-left: 4px solid var(--primary);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12.5px;
+      animation: toastIn 0.18s ease-out;
+    }
+    .toast.success { border-left-color: var(--export); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.warn { border-left-color: var(--warn-border); }
+    .toast button {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      padding: 0 4px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .pipeline-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .step-chip {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 11px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .step-chip strong { display: block; font-size: 12px; color: var(--ink); }
+    .step-chip span { display: block; font-size: 11px; color: var(--muted); }
+
+    .upload-zone {
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface-subtle);
+      padding: 14px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .upload-zone.dragover { border-color: var(--primary); background: var(--primary-soft); }
+    .upload-info { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 300px; min-width: 0; }
+    .upload-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .upload-info h2 { margin: 0 0 2px; font-size: 14px; font-weight: 700; }
+    .guide { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .file-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-size: 11.5px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    .file-picker-btn {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+    .file-picker-btn:hover { background: var(--surface-subtle); border-color: var(--muted); }
+    .file-picker-btn input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .check-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      cursor: pointer;
+    }
+
+    .settings-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .field.wide { grid-column: span 2; }
+    .field label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input, .field select { width: 100%; min-width: 0; }
+
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: minmax(220px, 1.45fr) repeat(auto-fit, minmax(115px, 1fr));
       gap: 10px;
     }
     .kpi {
-      background: #f8fafc;
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 10px;
-    }
-    .kpi .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; }
-    .kpi .val { font-size: 17px; font-weight: 700; margin-top: 2px; }
-    .kpi.highlight { background: var(--success-bg); border-color: #86efac; }
-    .settings-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: flex-end;
-    }
-    .field {
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-sm);
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      justify-content: space-between;
+      gap: 4px;
     }
-    .field label { font-size: 11px; color: var(--muted); font-weight: 600; }
-    .field input, .field select { padding: 4px 8px; min-width: 90px; }
+    .kpi .lbl {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .kpi .val { font-size: 17px; font-weight: 700; color: var(--ink); font-family: var(--font-mono); }
+    .kpi .sub { font-size: 11px; color: var(--muted); }
+    .kpi-bar { height: 3px; border-radius: 999px; background: var(--border); overflow: hidden; margin-top: 2px; }
+    .kpi-bar > span { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
+    .kpi.highlight {
+      background: linear-gradient(135deg, var(--export-soft) 0%, var(--surface) 75%);
+      border-color: var(--export);
+    }
+    .kpi.highlight .val { font-size: 19px; color: var(--export); }
+
     .split {
       display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 12px;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 14px;
       align-items: start;
     }
-    .split.preview-hidden {
-      grid-template-columns: 1fr;
-    }
-    @media (max-width: 1100px) {
-      .split { grid-template-columns: 1fr; }
-      .preview-box { position: static; max-height: 45vh; }
-      .table-wrap { max-height: none; -webkit-overflow-scrolling: touch; }
-    }
-    @media (max-width: 768px) {
-      input, select, td input { font-size: 16px; }
-    }
-    .preview-box {
-      position: sticky;
-      top: 10px;
-      max-height: 80vh;
-      overflow: auto;
-    }
-    .preview-box img {
-      width: 100%;
+    .split.preview-hidden { grid-template-columns: minmax(0, 1fr); }
+    .preview-box { position: sticky; top: 70px; max-height: calc(100vh - 86px); overflow: auto; }
+    .preview-frame {
       border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      overflow: auto;
+      max-height: 52vh;
+    }
+    .preview-box img { display: block; width: 100%; cursor: zoom-in; background: #fff; }
+    .preview-box img.zoomed { width: 240%; max-width: none; cursor: zoom-out; }
+    .preview-empty { padding: 26px 14px; text-align: center; color: var(--muted); font-size: 12px; }
+    .audit-group { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .audit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 11.5px; }
+    .audit-lbl { font-weight: 700; color: var(--ink-secondary); min-width: 112px; }
+    .audit-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink);
+    }
+
+    .grid-panel { padding: 12px 14px; min-width: 0; }
+    .grid-top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .grid-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .search-input { width: 195px; padding: 5px 9px !important; font-size: 12px; }
+    .seg-group {
+      display: inline-flex;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      padding: 2px;
+      gap: 2px;
+    }
+    .seg-btn {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      gap: 0;
+      padding: 4px 9px;
+      font-size: 11.5px;
       border-radius: 4px;
-      cursor: zoom-in;
+      color: var(--muted);
     }
-    .preview-box img.zoomed {
-      width: 240%;
-      max-width: none;
-      cursor: zoom-out;
+    .seg-btn.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+
+    .grid-action-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      margin-bottom: 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
     }
+    .export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .legend-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--warn-ink);
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn-border); flex-shrink: 0; }
+
     .table-wrap {
       overflow: auto;
-      max-height: 76vh;
+      max-height: 74vh;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
     th {
       position: sticky;
       top: 0;
-      background: #e2e8f0;
-      z-index: 2;
-      padding: 7px 6px;
+      z-index: 3;
+      background: var(--th-bg);
+      color: var(--ink-secondary);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 9px 7px;
       text-align: center;
-      border-bottom: 2px solid #94a3b8;
+      border-bottom: 1px solid var(--border-strong);
       border-right: 1px solid var(--border);
       white-space: nowrap;
     }
     td {
       padding: 4px 5px;
-      border-bottom: 1px solid #e2e8f0;
-      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
       vertical-align: middle;
     }
-    tr.inferred { background: var(--warn-bg); }
-    tr:hover { background: #f1f5f9; }
+    tbody tr:hover td { background: var(--row-hover); }
+    tr.inferred td { background: var(--warn-row-bg); }
+    tr.inferred td:first-child { box-shadow: inset 3px 0 0 var(--warn-border); }
     td input {
       width: 100%;
-      padding: 3px 5px;
+      padding: 4px 6px;
       border: 1px solid transparent;
       background: transparent;
       border-radius: 4px;
       font-size: 12px;
+      color: var(--ink);
     }
     td input:hover, td input:focus {
-      border-color: #94a3b8;
-      background: #fff;
-      outline: none;
+      border-color: var(--primary);
+      background: var(--input-bg);
+      box-shadow: none;
     }
-    td.num input { text-align: right; }
+    td.num input { text-align: right; font-family: var(--font-mono); }
+    .calc-cell {
+      text-align: right;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      padding-right: 8px;
+      white-space: nowrap;
+    }
     .warn-list {
       background: var(--warn-bg);
       border: 1px solid var(--warn-border);
-      border-radius: 6px;
-      padding: 8px 12px;
+      color: var(--warn-ink);
+      border-radius: var(--radius-sm);
+      padding: 10px 13px;
       font-size: 12px;
     }
     .badge-inf {
-      background: #fef08a;
-      color: #854d0e;
+      display: inline-block;
+      margin-top: 2px;
+      background: var(--warn-chip);
+      color: var(--warn-ink);
       font-size: 10px;
-      padding: 1px 5px;
+      padding: 1px 6px;
       border-radius: 4px;
-      font-weight: 600;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
     }
-    .shape-cell { min-width: 118px; text-align: center; }
+    .shape-cell { min-width: 128px; text-align: center; }
+    .shape-cell svg polyline,
+    .shape-cell svg rect,
+    .shape-cell svg line,
+    .shape-cell svg path { stroke: var(--shape-stroke); }
+    .shape-cell svg text { fill: var(--ink); font-family: var(--font-mono); }
+    .del-btn {
+      padding: 4px 8px;
+      color: var(--danger);
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+    }
+    .del-btn:hover:not(:disabled) { background: var(--danger-soft); border-color: transparent; }
+    .empty-filter { text-align: center; padding: 26px 14px; color: var(--muted); }
     .hidden { display: none !important; }
+
+    @media (max-width: 1120px) {
+      .split { grid-template-columns: 1fr; }
+      .preview-box { position: static; max-height: none; }
+      .table-wrap { max-height: none; -webkit-overflow-scrolling: touch; }
+    }
+    @media (max-width: 768px) {
+      .pipeline-strip { grid-template-columns: 1fr; }
+      .field.wide { grid-column: span 1; }
+      .search-input { width: 100%; }
+      input, select, td input { font-size: 16px; }
+      button { padding: 9px 12px; }
+      .toast-region { bottom: 14px; left: 12px; right: 12px; max-width: none; }
+    }
   </style>
 </head>
 <body>
-<header>
+<header class="topbar">
   <div class="brand">
-    <h1>Bar Bending Schedule (BBS) Generator</h1>
-    <span class="pill">100% OFFLINE • NO EXTERNAL API</span>
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 6v11a2 2 0 0 0 2 2h12"/>
+        <path d="M9 5h10v10"/>
+      </svg>
+    </div>
+    <div class="brand-copy">
+      <div class="brand-title-row">
+        <h1>Bar Bending Studio</h1>
+        <span class="pill"><span class="pill-dot"></span>100% OFFLINE • FASTAPI + PYMUPDF</span>
+      </div>
+      <div class="brand-sub">CAD Structural PDF → Editable IS 456 Grid → Formula + DrawingML Workbook</div>
+    </div>
   </div>
   <div class="toolbar">
-    <button id="togglePreviewBtn" type="button" disabled>Hide Drawing Preview</button>
-    <button id="addRowBtn" type="button" disabled>+ Add Custom Row</button>
-    <button id="exportBtn" class="export" type="button" disabled>Export .xlsx (Formulas + Shapes)</button>
+    <button id="themeToggleBtn" class="ghost-dark" type="button" title="Switch Light / CAD Dark theme">
+      <span id="themeIcon"></span>
+      <span id="themeLabel">CAD Dark</span>
+    </button>
+    <button id="togglePreviewBtn" class="ghost-dark" type="button" disabled>Hide Preview</button>
+    <button id="addRowBtn" class="ghost-dark" type="button" disabled>+ Add Row</button>
   </div>
 </header>
 
+<div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
 <main>
-  <section class="panel upload-zone" id="dropZone">
-    <div style="text-align:left">
-      <strong>Upload CAD Structural PDF</strong>
-      <div style="color:var(--muted);font-size:12px;">
-        Extracts Schedule Table, Foundation Level Plan counts (box footings vs. combined footings), Notes &amp; Sections locally via PyMuPDF.
+  <section class="panel">
+    <div class="pipeline-strip">
+      <div class="step-chip">
+        <span class="step-num">01</span>
+        <div><strong>Extract CAD Vectors</strong><span>PyMuPDF vector words, SHX annotations &amp; plan counts</span></div>
+      </div>
+      <div class="step-chip">
+        <span class="step-num">02</span>
+        <div><strong>Verify Highlighted Bars</strong><span>Inspect yellow inferred items side-by-side with PDF preview</span></div>
+      </div>
+      <div class="step-chip">
+        <span class="step-num">03</span>
+        <div><strong>Export Native .xlsx</strong><span>Generates live Excel formulas &amp; DrawingML rebar sketches</span></div>
       </div>
     </div>
-    <div class="toolbar">
-      <select id="uploadMode">
-        <option value="sample_compat" selected>Sample-Compatible Rules</option>
-        <option value="strict_geometry">Strict Uniform Geometry</option>
-      </select>
-      <label style="display:flex;align-items:center;gap:4px;font-size:12px;">
-        <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
-      </label>
-      <input type="file" id="pdfInput" accept=".pdf,application/pdf" />
-      <button id="parseBtn" class="primary" type="button">Parse PDF</button>
+
+    <div class="upload-zone" id="dropZone">
+      <div class="upload-info">
+        <div class="upload-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+          </svg>
+        </div>
+        <div>
+          <h2>Upload or Drop Structural CAD PDF</h2>
+          <div class="guide">
+            Processed 100% locally on your FastAPI server — zero external API calls or cloud uploads.
+          </div>
+          <div id="selectedFileBadge" class="file-pill hidden"></div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select id="uploadMode" title="Calculation Rule Engine">
+          <option value="sample_compat" selected>Sample-Compatible Rules</option>
+          <option value="strict_geometry">Strict Uniform Geometry</option>
+        </select>
+        <label class="check-pill">
+          <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
+        </label>
+        <label class="file-picker-btn">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>Choose PDF</span>
+          <input type="file" id="pdfInput" accept=".pdf,application/pdf" />
+        </label>
+        <button id="parseBtn" class="primary" type="button">Parse PDF</button>
+        <button id="blankBtn" type="button" title="Open an editable starter BBS without a PDF">Start Blank Schedule</button>
+      </div>
     </div>
   </section>
 
-  <section id="workspace" class="hidden" style="display:flex;flex-direction:column;gap:12px;">
+  <section id="workspace" class="hidden" style="display:flex;flex-direction:column;gap:14px;">
     <div id="warnBox" class="warn-list hidden"></div>
 
     <div class="panel">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Project &amp; IS 456 Parameters</span>
+          <div class="panel-title">Drawing Metadata &amp; Cover Configuration</div>
+        </div>
+        <button id="rebuildBtn" class="primary" type="button">Rebuild Rules</button>
+      </div>
       <div class="settings-bar" id="metaBar">
-        <div class="field" style="flex:1;min-width:160px;">
-          <label>Project</label>
+        <div class="field wide">
+          <label for="metaProject">Project</label>
           <input type="text" id="metaProject" />
         </div>
-        <div class="field" style="min-width:140px;">
-          <label>Drawing No</label>
+        <div class="field">
+          <label for="metaDrawing">Drawing No</label>
           <input type="text" id="metaDrawing" />
         </div>
-        <div class="field" style="min-width:140px;">
-          <label>Location</label>
+        <div class="field">
+          <label for="metaLocation">Location</label>
           <input type="text" id="metaLocation" />
         </div>
-        <div class="field" style="flex:1;min-width:180px;">
-          <label>Structure</label>
+        <div class="field wide">
+          <label for="metaStructure">Structure</label>
           <input type="text" id="metaStructure" />
         </div>
         <div class="field">
-          <label>Footing Cover (mm)</label>
-          <input type="number" id="setFootCov" style="width:80px;" />
+          <label for="setFootCov">Footing Cover (mm)</label>
+          <input type="number" id="setFootCov" />
         </div>
         <div class="field">
-          <label>Col Cover (mm)</label>
-          <input type="number" id="setColCov" style="width:80px;" />
+          <label for="setColCov">Col Cover (mm)</label>
+          <input type="number" id="setColCov" />
         </div>
         <div class="field">
-          <label>Col Height (mm)</label>
-          <input type="number" id="setColHt" style="width:90px;" />
+          <label for="setColHt">Col Height (mm)</label>
+          <input type="number" id="setColHt" />
         </div>
         <div class="field">
-          <label>Rule Mode</label>
+          <label for="setMode">Rule Mode</label>
           <select id="setMode">
             <option value="sample_compat">Sample-Compatible</option>
             <option value="strict_geometry">Strict Geometry</option>
           </select>
         </div>
         <div class="field">
-          <label>Round Up</label>
+          <label for="setRoundUp">Round Up</label>
           <select id="setRoundUp">
             <option value="false">Exact</option>
             <option value="true">ROUNDUP</option>
           </select>
         </div>
-        <button id="rebuildBtn" class="primary" type="button">Rebuild Rules</button>
       </div>
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
 
     <div class="split" id="splitPane">
-      <div class="panel preview-box" id="previewPane">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong>PDF Drawing Reference (Click to Zoom)</strong>
-          <span id="planStatsLabel" style="font-size:11px;color:var(--muted);"></span>
+      <aside class="panel preview-box" id="previewPane">
+        <div class="panel-header" style="margin-bottom:8px;">
+          <div>
+            <span class="panel-kicker">CAD Reference</span>
+            <div class="panel-title">Drawing Preview</div>
+          </div>
+          <span id="planStatsLabel" class="audit-chip"></span>
         </div>
-        <img id="previewImg" alt="Uploaded PDF Drawing Preview" />
-        <div id="planAudit" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
-      </div>
+        <div class="preview-frame">
+          <img id="previewImg" alt="Uploaded PDF Drawing Preview" class="hidden" />
+          <div id="previewEmptyState" class="preview-empty">
+            No PDF drawing loaded yet. Drop a CAD PDF above to inspect plan annotations side-by-side.
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Tip: Click or tap drawing to toggle 2.4× zoom.</div>
+        <div id="planAudit" class="audit-group"></div>
+      </aside>
 
-      <div class="panel" style="padding:8px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:0 4px;">
-          <strong>Editable Bar Bending Schedule (<span id="rowCountLabel">0</span> rows)</strong>
-          <span style="font-size:11px;color:var(--muted);">Yellow rows = inferred/derived from plan or sections — verify before export.</span>
+      <div class="panel grid-panel">
+        <div class="grid-top-bar">
+          <div class="panel-title">
+            <span>Editable Bar Bending Schedule (<span id="rowCountLabel">0</span> rows)</span>
+            <span id="visibleCountBadge" class="audit-chip hidden"></span>
+          </div>
+          <div class="grid-filters">
+            <input type="search" id="gridSearch" class="search-input" placeholder="Search mark, desc, remark..." />
+            <div class="seg-group" role="group" aria-label="Filter BBS rows">
+              <button type="button" id="filterAllBtn" class="seg-btn active">All</button>
+              <button type="button" id="filterVerifyBtn" class="seg-btn">Verify Only (<span id="verifyCountLabel">0</span>)</button>
+            </div>
+          </div>
         </div>
+
+        <div class="grid-action-strip">
+          <div class="export-actions">
+            <button id="exportBtn" class="export" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span>Download .xlsx (Formulas + Shapes)</span>
+            </button>
+          </div>
+          <span class="legend-note"><span class="legend-dot"></span>Yellow rows = inferred/derived from plan or sections — verify before export.</span>
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -360,6 +875,10 @@
             </thead>
             <tbody id="bbsTbody"></tbody>
           </table>
+          <div id="emptyFilterMsg" class="empty-filter hidden">
+            No BBS rows match the current filter.
+            <button type="button" id="clearFilterBtn" style="margin-left:8px;">Reset Filter</button>
+          </div>
         </div>
       </div>
     </div>
@@ -369,84 +888,192 @@
 <script>
 let currentDoc = null;
 let previewVisible = true;
+let filterMode = "all";
+let searchQuery = "";
+let exportBusy = false;
 
 const $ = (id) => document.getElementById(id);
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function showToast(message, tone = "info", timeoutMs = 4500) {
+  const region = $("toastRegion");
+  if (!region) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${tone}`;
+  const span = document.createElement("span");
+  span.textContent = message;
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Dismiss notification");
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", () => toast.remove());
+  toast.appendChild(span);
+  toast.appendChild(closeBtn);
+  region.appendChild(toast);
+  if (timeoutMs > 0) {
+    setTimeout(() => {
+      if (toast.isConnected) toast.remove();
+    }, timeoutMs);
+  }
+}
+
+function applyTheme(theme) {
+  const next = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  try {
+    localStorage.setItem("bbs_theme", next);
+  } catch (_) {}
+  const icon = $("themeIcon");
+  const label = $("themeLabel");
+  if (!icon || !label) return;
+  if (next === "dark") {
+    label.textContent = "Light Mode";
+    icon.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
+  } else {
+    label.textContent = "CAD Dark";
+    icon.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+  }
+}
 
 function renderShapeSvg(shape) {
   const k = (shape && shape.kind) || "straight";
   const lbl = (shape && shape.labels) || {};
   if (k === "u_bar") {
-    return `<svg width="110" height="30" viewBox="0 0 110 30">
-      <polyline points="12,5 12,24 94,24 94,5" fill="none" stroke="#1e40af" stroke-width="2"/>
-      <text x="53" y="20" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.span || ""}</text>
-      <text x="98" y="16" font-size="9" fill="#0f172a">${lbl.leg || ""}</text>
+    return `<svg width="122" height="30" viewBox="0 0 124 30">
+      <polyline points="10,5 10,24 84,24 84,5" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <text x="47" y="20" text-anchor="middle" font-size="9" fill="#0f172a">${escapeHtml(lbl.span || "")}</text>
+      <text x="89" y="16" font-size="9" fill="#0f172a">${escapeHtml(lbl.leg || "")}</text>
     </svg>`;
   }
   if (k === "combined_loop") {
-    return `<svg width="110" height="32" viewBox="0 0 110 32">
-      <polyline points="24,6 10,6 10,25 96,25 96,6 82,6" fill="none" stroke="#1e40af" stroke-width="2"/>
-      <line x1="10" y1="9" x2="96" y2="9" stroke="#1e40af" stroke-width="1.3"/>
-      <text x="53" y="21" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.span || ""}</text>
-      <text x="99" y="18" font-size="9" fill="#0f172a">${lbl.leg || ""}</text>
+    return `<svg width="122" height="32" viewBox="0 0 124 32">
+      <polyline points="22,6 10,6 10,25 84,25 84,6 72,6" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <line x1="10" y1="9" x2="84" y2="9" stroke="#1e40af" stroke-width="1.3"/>
+      <text x="47" y="21" text-anchor="middle" font-size="9" fill="#0f172a">${escapeHtml(lbl.span || "")}</text>
+      <text x="89" y="18" font-size="9" fill="#0f172a">${escapeHtml(lbl.leg || "")}</text>
     </svg>`;
   }
   if (k === "l_bar") {
-    return `<svg width="110" height="30" viewBox="0 0 110 30">
-      <polyline points="42,25 58,25 58,4" fill="none" stroke="#1e40af" stroke-width="2"/>
-      <text x="64" y="15" font-size="9" fill="#0f172a">${lbl.height || ""}</text>
-      <text x="36" y="27" text-anchor="end" font-size="9" fill="#0f172a">${lbl.ld || ""}</text>
+    return `<svg width="122" height="30" viewBox="0 0 124 30">
+      <polyline points="46,25 62,25 62,4" fill="none" stroke="#1e40af" stroke-width="2"/>
+      <text x="68" y="15" font-size="9" fill="#0f172a">${escapeHtml(lbl.height || "")}</text>
+      <text x="40" y="27" text-anchor="end" font-size="9" fill="#0f172a">${escapeHtml(lbl.ld || "")}</text>
     </svg>`;
   }
   if (k === "stirrup_rect") {
-    return `<svg width="110" height="30" viewBox="0 0 110 30">
+    return `<svg width="122" height="30" viewBox="0 0 124 30">
       <rect x="24" y="5" width="46" height="20" rx="4" fill="none" stroke="#1e40af" stroke-width="2"/>
       <line x1="24" y1="6" x2="32" y2="13" stroke="#1e40af" stroke-width="1.8"/>
       <line x1="27" y1="4" x2="35" y2="11" stroke="#1e40af" stroke-width="1.8"/>
-      <text x="74" y="18" font-size="9" fill="#0f172a">${lbl.b || ""}</text>
-      <text x="47" y="22" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.a || ""}</text>
+      <text x="74" y="18" font-size="9" fill="#0f172a">${escapeHtml(lbl.b || "")}</text>
+      <text x="47" y="22" text-anchor="middle" font-size="9" fill="#0f172a">${escapeHtml(lbl.a || "")}</text>
     </svg>`;
   }
   if (k === "center_link") {
-    return `<svg width="110" height="30" viewBox="0 0 110 30">
-      <line x1="50" y1="5" x2="50" y2="25" stroke="#1e40af" stroke-width="2"/>
-      <path d="M44,8 A4,4 0 0 1 50,5 M50,25 A4,4 0 0 0 56,22" fill="none" stroke="#1e40af" stroke-width="1.8"/>
-      <text x="58" y="18" font-size="9" fill="#0f172a">${lbl.a || ""}</text>
+    return `<svg width="122" height="30" viewBox="0 0 124 30">
+      <line x1="54" y1="5" x2="54" y2="25" stroke="#1e40af" stroke-width="2"/>
+      <path d="M48,8 A4,4 0 0 1 54,5 M54,25 A4,4 0 0 0 60,22" fill="none" stroke="#1e40af" stroke-width="1.8"/>
+      <text x="63" y="18" font-size="9" fill="#0f172a">${escapeHtml(lbl.a || "")}</text>
     </svg>`;
   }
   if (k === "chair") {
-    return `<svg width="110" height="28" viewBox="0 0 110 28">
-      <polyline points="14,22 30,22 30,7 78,7 78,22 94,22" fill="none" stroke="#1e40af" stroke-width="2"/>
+    return `<svg width="122" height="28" viewBox="0 0 124 28">
+      <polyline points="20,22 36,22 36,7 86,7 86,22 102,22" fill="none" stroke="#1e40af" stroke-width="2"/>
     </svg>`;
   }
-  return `<svg width="110" height="26" viewBox="0 0 110 26">
-    <line x1="10" y1="18" x2="100" y2="18" stroke="#1e40af" stroke-width="2"/>
-    <text x="55" y="13" text-anchor="middle" font-size="9" fill="#0f172a">${lbl.text || ""}</text>
+  return `<svg width="122" height="26" viewBox="0 0 124 26">
+    <line x1="12" y1="18" x2="112" y2="18" stroke="#1e40af" stroke-width="2"/>
+    <text x="62" y="13" text-anchor="middle" font-size="9" fill="#0f172a">${escapeHtml(lbl.text || "")}</text>
   </svg>`;
+}
+
+function renderAuditRow(label, countsObj) {
+  if (!countsObj || Object.keys(countsObj).length === 0) return "";
+  const chips = Object.entries(countsObj)
+    .map(([k, v]) => `<span class="audit-chip">${escapeHtml(k)} ×${escapeHtml(v)}</span>`)
+    .join("");
+  return `<div class="audit-row"><span class="audit-lbl">${escapeHtml(label)}</span>${chips}</div>`;
 }
 
 function renderKpis(doc) {
   const dias = [8, 10, 12, 16, 20, 25, 32];
+  const totalMt = Number(doc.total_weight_mt || 0);
+  const totalKg = Math.round(totalMt * 1000).toLocaleString();
+  const inferredCount = (doc.rows || []).filter((r) => r.inferred).length;
+
   let html = `
     <div class="kpi highlight">
-      <div class="lbl">Grand Total Weight</div>
-      <div class="val">${doc.total_weight_mt.toFixed(3)} MT (${Math.round(doc.total_weight_mt * 1000).toLocaleString()} kg)</div>
+      <div class="lbl">
+        <span>Grand Total Steel</span>
+        <span>${doc.rows.length} rows</span>
+      </div>
+      <div class="val">${totalMt.toFixed(3)} MT</div>
+      <div class="sub">${totalKg} kg • ${inferredCount} verify</div>
     </div>
   `;
   for (const d of dias) {
-    const val = (doc.totals_by_dia_mt && doc.totals_by_dia_mt[d]) || 0;
+    const val = Number((doc.totals_by_dia_mt && doc.totals_by_dia_mt[d]) || 0);
     if (val > 0 || d <= 20) {
-      html += `<div class="kpi"><div class="lbl">${d} mm</div><div class="val">${val.toFixed(3)} MT</div></div>`;
+      const pct = totalMt > 0 ? Math.min(100, (val / totalMt) * 100) : 0;
+      html += `
+        <div class="kpi">
+          <div class="lbl"><span>Ø ${d} mm</span><span>${pct.toFixed(0)}%</span></div>
+          <div class="val">${val.toFixed(3)} MT</div>
+          <div class="kpi-bar"><span style="width:${pct.toFixed(1)}%"></span></div>
+        </div>
+      `;
     }
   }
   $("kpiGrid").innerHTML = html;
 }
 
+function updateExportButtonState() {
+  const hasRows = Boolean(currentDoc && currentDoc.rows && currentDoc.rows.length > 0);
+  $("exportBtn").disabled = !hasRows || exportBusy;
+}
+
+function applyGridFilter() {
+  if (!currentDoc) return;
+  const rows = Array.from($("bbsTbody").querySelectorAll("tr"));
+  const q = searchQuery.trim().toLowerCase();
+  let visible = 0;
+
+  rows.forEach((tr) => {
+    const idx = Number(tr.dataset.idx);
+    const item = currentDoc.rows[idx];
+    if (!item) return;
+    const matchesVerify = filterMode !== "verify" || Boolean(item.inferred);
+    const hay = `${item.bar_mark || ""} ${item.description || ""} ${item.remark || ""} ${item.dia_mm || ""}`.toLowerCase();
+    const matchesQuery = !q || hay.includes(q);
+    const show = matchesVerify && matchesQuery;
+    tr.classList.toggle("hidden", !show);
+    if (show) visible++;
+  });
+
+  const total = currentDoc.rows.length;
+  const badge = $("visibleCountBadge");
+  if (visible !== total) {
+    badge.textContent = `${visible} of ${total} shown`;
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+  $("emptyFilterMsg").classList.toggle("hidden", !(total > 0 && visible === 0));
+}
+
 function renderDocument(doc, previewUrl) {
   currentDoc = doc;
   $("workspace").classList.remove("hidden");
-  $("exportBtn").disabled = false;
   $("addRowBtn").disabled = false;
   $("togglePreviewBtn").disabled = false;
+  updateExportButtonState();
 
   $("metaProject").value = doc.project_name || "";
   $("metaDrawing").value = doc.drawing_no || "";
@@ -458,49 +1085,60 @@ function renderDocument(doc, previewUrl) {
   $("setMode").value = doc.settings.mode;
   $("setRoundUp").value = String(doc.settings.round_up_nos);
 
-  if (previewUrl) {
-    $("previewImg").src = previewUrl;
+  if (typeof previewUrl === "string") {
+    if (previewUrl.length > 0) {
+      $("previewImg").src = previewUrl;
+      $("previewImg").classList.remove("hidden");
+      $("previewEmptyState").classList.add("hidden");
+    } else {
+      $("previewImg").removeAttribute("src");
+      $("previewImg").classList.add("hidden");
+      $("previewImg").classList.remove("zoomed");
+      $("previewEmptyState").classList.remove("hidden");
+    }
   }
 
   const st = doc.parse_stats || {};
-  $("planStatsLabel").textContent = st.total_tokens ? `${st.total_tokens} CAD tokens` : "";
-  if (st.box_counts || st.cf_counts) {
-    $("planAudit").innerHTML =
-      `<div><strong>Detected Box Footings:</strong> ${JSON.stringify(st.box_counts || {})}</div>` +
-      `<div><strong>Detected Total Columns:</strong> ${JSON.stringify(st.total_col_counts || {})}</div>` +
-      `<div><strong>Detected Combined Footings:</strong> ${JSON.stringify(st.cf_counts || {})}</div>`;
-  }
+  $("planStatsLabel").textContent = st.total_tokens ? `${st.total_tokens} CAD tokens` : "Manual Mode";
+  $("planStatsLabel").classList.toggle("hidden", !st.total_tokens && (doc.schedule || []).length > 0);
+  $("planAudit").innerHTML =
+    renderAuditRow("Box Footings", st.box_counts) +
+    renderAuditRow("Total Columns", st.total_col_counts) +
+    renderAuditRow("Combined Footings", st.cf_counts);
 
   if (doc.warnings && doc.warnings.length > 0) {
     $("warnBox").classList.remove("hidden");
-    $("warnBox").innerHTML = "<strong>Review Notes:</strong> " + doc.warnings.map(w => `<div>• ${w}</div>`).join("");
+    $("warnBox").innerHTML =
+      "<strong>Review Notes:</strong> " + doc.warnings.map((w) => `<div>• ${escapeHtml(w)}</div>`).join("");
   } else {
     $("warnBox").classList.add("hidden");
   }
 
   renderKpis(doc);
   $("rowCountLabel").textContent = doc.rows.length;
+  $("verifyCountLabel").textContent = doc.rows.filter((r) => r.inferred).length;
 
   const tbody = $("bbsTbody");
   tbody.innerHTML = "";
   doc.rows.forEach((row, idx) => {
     const tr = document.createElement("tr");
+    tr.dataset.idx = String(idx);
     if (row.inferred) tr.classList.add("inferred");
     tr.innerHTML = `
-      <td style="text-align:center;font-weight:600;">${row.sr_no ?? ""}</td>
+      <td class="mono" style="text-align:center;font-weight:700;">${row.sr_no ?? ""}</td>
       <td><input type="text" data-idx="${idx}" data-field="bar_mark" value="${escapeHtml(row.bar_mark)}" style="min-width:115px"/></td>
-      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:165px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ''}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="span_mm" value="${Math.round(row.span_mm)}" style="width:72px"/></td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="dia_mm" value="${row.dia_mm}" style="width:52px"/></td>
+      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:165px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ""}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="span_mm" value="${Math.round(row.span_mm)}" style="width:74px"/></td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="dia_mm" value="${row.dia_mm}" style="width:54px"/></td>
       <td class="shape-cell">${renderShapeSvg(row.shape)}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="spacing_mm" value="${row.spacing_mm ?? ""}" style="width:60px"/></td>
-      <td class="num"><input type="number" step="0.01" data-idx="${idx}" data-field="nos" value="${Number(row.nos.toFixed(3))}" style="width:68px"/></td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="multiple_no" value="${Number(row.multiple_no.toFixed(2))}" style="width:58px"/></td>
-      <td style="text-align:right;font-weight:600;padding-right:8px;">${Number(row.total_nos.toFixed(2))}</td>
-      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="cut_length_mm" value="${Math.round(row.cut_length_mm)}" style="width:74px"/></td>
-      <td style="text-align:right;font-weight:600;padding-right:8px;">${row.weight_kg.toFixed(3)}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="spacing_mm" value="${row.spacing_mm ?? ""}" style="width:62px"/></td>
+      <td class="num"><input type="number" step="0.01" data-idx="${idx}" data-field="nos" value="${Number(row.nos.toFixed(3))}" style="width:70px"/></td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="multiple_no" value="${Number(row.multiple_no.toFixed(2))}" style="width:60px"/></td>
+      <td class="calc-cell">${Number(row.total_nos.toFixed(2))}</td>
+      <td class="num"><input type="number" step="1" data-idx="${idx}" data-field="cut_length_mm" value="${Math.round(row.cut_length_mm)}" style="width:76px"/></td>
+      <td class="calc-cell">${row.weight_kg.toFixed(3)}</td>
       <td><input type="text" data-idx="${idx}" data-field="remark" value="${escapeHtml(row.remark)}" style="min-width:105px"/></td>
-      <td><button type="button" onclick="deleteRow(${idx})" title="Remove row" style="padding:2px 6px;color:#b91c1c;">×</button></td>
+      <td><button type="button" class="del-btn" data-del="${idx}" title="Remove row" aria-label="Remove row">×</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -508,14 +1146,11 @@ function renderDocument(doc, previewUrl) {
   tbody.querySelectorAll("input").forEach((inp) => {
     inp.addEventListener("change", onCellEdit);
   });
-}
+  tbody.querySelectorAll(".del-btn").forEach((btn) => {
+    btn.addEventListener("click", () => deleteRow(Number(btn.dataset.del)));
+  });
 
-function escapeHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  applyGridFilter();
 }
 
 function syncMetaFields() {
@@ -529,6 +1164,22 @@ function syncMetaFields() {
   currentDoc.settings.column_height_mm = Number($("setColHt").value) || 4550;
   currentDoc.settings.mode = $("setMode").value;
   currentDoc.settings.round_up_nos = $("setRoundUp").value === "true";
+}
+
+async function postJsonAndRender(endpoint, doc, previewUrl = null) {
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(doc),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    showToast(err.detail || "Server calculation failed.", "error", 6000);
+    return null;
+  }
+  const updated = await resp.json();
+  renderDocument(updated, previewUrl);
+  return updated;
 }
 
 async function onCellEdit(e) {
@@ -547,25 +1198,83 @@ async function onCellEdit(e) {
     if (field === "cut_length_mm") row.cut_length_expr = null;
   }
   syncMetaFields();
-  const resp = await fetch("/api/recalculate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(currentDoc),
-  });
-  if (resp.ok) {
-    renderDocument(await resp.json(), null);
-  }
+  await postJsonAndRender("/api/recalculate", currentDoc, null);
 }
 
 async function deleteRow(idx) {
   currentDoc.rows.splice(idx, 1);
-  const resp = await fetch("/api/recalculate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(currentDoc),
-  });
-  if (resp.ok) renderDocument(await resp.json(), null);
+  await postJsonAndRender("/api/recalculate", currentDoc, null);
 }
+
+function updateSelectedFileBadge(file) {
+  const badge = $("selectedFileBadge");
+  if (!file) {
+    badge.classList.add("hidden");
+    badge.textContent = "";
+    return;
+  }
+  const mb = file.size >= 1024 * 1024
+    ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+    : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+  badge.textContent = `Selected: ${file.name} (${mb})`;
+  badge.classList.remove("hidden");
+}
+
+function buildBlankStarterDoc() {
+  return {
+    project_name: "NEW PROJECT",
+    drawing_no: "BBS_01",
+    location: "SITE",
+    date_str: "",
+    structure: "Footing & Column Schedule",
+    settings: {
+      mode: $("uploadMode").value,
+      round_up_nos: $("uploadRoundUp").checked,
+      footing_cover_mm: 50,
+      column_cover_mm: 40,
+      column_height_mm: 4550,
+      ld_vertical_mm: 450,
+      hook_mult: 8,
+      hook_min_mm: 75,
+      shear_wall_ht_cf1_mm: 1650,
+      shear_wall_ht_cf2_mm: 3000,
+      include_chairs_spacers: true,
+    },
+    schedule: [],
+    rows: [
+      {
+        id: "manual_starter_1",
+        sr_no: 1,
+        group_key: "C1",
+        bar_mark: "C1 Footing",
+        description: "LONG LOWER",
+        span_expr: null,
+        span_mm: 2400,
+        dia_mm: 12,
+        shape: { kind: "u_bar", labels: { span: "2300", leg: "550" } },
+        spacing_mm: 150,
+        nos_expr: null,
+        nos: 12,
+        multiple_no: 1,
+        total_nos: 12,
+        cut_length_expr: null,
+        cut_length_mm: 3376,
+        coupler: 0,
+        weight_kg: 0,
+        remark: "Manual starter row",
+        inferred: false,
+        source_note: "Manual starter",
+      },
+    ],
+    warnings: [],
+    parse_stats: {},
+  };
+}
+
+$("themeToggleBtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  applyTheme(cur === "dark" ? "light" : "dark");
+});
 
 $("addRowBtn").addEventListener("click", async () => {
   if (!currentDoc) return;
@@ -589,38 +1298,50 @@ $("addRowBtn").addEventListener("click", async () => {
     inferred: false,
     source_note: "Manual row",
   });
-  const resp = await fetch("/api/recalculate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(currentDoc),
-  });
-  if (resp.ok) renderDocument(await resp.json(), null);
+  await postJsonAndRender("/api/recalculate", currentDoc, null);
 });
 
 $("rebuildBtn").addEventListener("click", async () => {
   if (!currentDoc) return;
   syncMetaFields();
-  const resp = await fetch("/api/rebuild", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(currentDoc),
-  });
-  if (resp.ok) renderDocument(await resp.json(), null);
+  if (!currentDoc.schedule || currentDoc.schedule.length === 0) {
+    await postJsonAndRender("/api/recalculate", currentDoc, null);
+    showToast("Recalculated manual rows (no extracted PDF schedule to rebuild from).", "info");
+    return;
+  }
+  const ok = await postJsonAndRender("/api/rebuild", currentDoc, null);
+  if (ok) showToast("Rebuilt BBS rows using updated rule settings.", "success");
+});
+
+$("blankBtn").addEventListener("click", async () => {
+  filterMode = "all";
+  searchQuery = "";
+  $("gridSearch").value = "";
+  $("filterAllBtn").classList.add("active");
+  $("filterVerifyBtn").classList.remove("active");
+  const ok = await postJsonAndRender("/api/recalculate", buildBlankStarterDoc(), "");
+  if (ok) showToast("Started blank editable schedule. Add rows or edit any cell, then download .xlsx.", "info");
 });
 
 $("parseBtn").addEventListener("click", async () => {
   const file = $("pdfInput").files[0];
   if (!file) {
-    alert("Please choose a PDF file first.");
+    showToast("Please choose a structural PDF file first.", "warn");
     return;
   }
   await parseSelectedFile(file);
 });
 
+$("pdfInput").addEventListener("change", async () => {
+  const file = $("pdfInput").files[0];
+  if (file) await parseSelectedFile(file);
+});
+
 async function parseSelectedFile(file) {
   const btn = $("parseBtn");
   btn.disabled = true;
-  btn.textContent = "Parsing...";
+  btn.textContent = "Parsing PDF...";
+  updateSelectedFileBadge(file);
   try {
     const fd = new FormData();
     fd.append("file", file);
@@ -629,10 +1350,19 @@ async function parseSelectedFile(file) {
     const resp = await fetch("/api/parse", { method: "POST", body: fd });
     const data = await resp.json();
     if (!resp.ok) {
-      alert(data.detail || "Failed to parse PDF.");
+      showToast(data.detail || "Failed to parse PDF.", "error", 6500);
       return;
     }
+    filterMode = "all";
+    searchQuery = "";
+    $("gridSearch").value = "";
+    $("filterAllBtn").classList.add("active");
+    $("filterVerifyBtn").classList.remove("active");
     renderDocument(data.document, data.preview_image);
+    showToast(`Parsed ${data.document.rows.length} BBS rows (${data.document.total_weight_mt.toFixed(3)} MT).`, "success");
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to parse PDF: " + (err.message || err), "error", 6500);
   } finally {
     btn.disabled = false;
     btn.textContent = "Parse PDF";
@@ -640,7 +1370,7 @@ async function parseSelectedFile(file) {
 }
 
 $("exportBtn").addEventListener("click", async () => {
-  if (!currentDoc) return;
+  if (!currentDoc || currentDoc.rows.length === 0 || exportBusy) return;
   syncMetaFields();
 
   // iOS Safari reliably triggers native file download dialog via form POST attachment response
@@ -662,31 +1392,75 @@ $("exportBtn").addEventListener("click", async () => {
     return;
   }
 
-  const resp = await fetch("/api/export", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(currentDoc),
-  });
-  if (!resp.ok) {
-    alert("Export failed.");
-    return;
+  exportBusy = true;
+  updateExportButtonState();
+  const lbl = $("exportBtn").querySelector("span");
+  const prevText = lbl.textContent;
+  lbl.textContent = "Generating .xlsx...";
+  try {
+    const resp = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentDoc),
+    });
+    if (!resp.ok) {
+      showToast("Export failed.", "error", 6000);
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const filename = `${(currentDoc.drawing_no || "BBS").replace(/[^A-Za-z0-9_-]/g, "_")}_BBS.xlsx`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+    showToast(`Downloaded ${filename}.`, "success");
+  } catch (err) {
+    console.error(err);
+    showToast("Export failed: " + (err.message || err), "error", 6000);
+  } finally {
+    exportBusy = false;
+    lbl.textContent = prevText;
+    updateExportButtonState();
   }
-  const blob = await resp.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${(currentDoc.drawing_no || "BBS").replace(/[^A-Za-z0-9_-]/g, "_")}_BBS.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
+});
+
+$("filterAllBtn").addEventListener("click", () => {
+  filterMode = "all";
+  $("filterAllBtn").classList.add("active");
+  $("filterVerifyBtn").classList.remove("active");
+  applyGridFilter();
+});
+
+$("filterVerifyBtn").addEventListener("click", () => {
+  filterMode = "verify";
+  $("filterVerifyBtn").classList.add("active");
+  $("filterAllBtn").classList.remove("active");
+  applyGridFilter();
+});
+
+$("gridSearch").addEventListener("input", (e) => {
+  searchQuery = e.target.value || "";
+  applyGridFilter();
+});
+
+$("clearFilterBtn").addEventListener("click", () => {
+  filterMode = "all";
+  searchQuery = "";
+  $("gridSearch").value = "";
+  $("filterAllBtn").classList.add("active");
+  $("filterVerifyBtn").classList.remove("active");
+  applyGridFilter();
 });
 
 $("togglePreviewBtn").addEventListener("click", () => {
   previewVisible = !previewVisible;
   $("previewPane").classList.toggle("hidden", !previewVisible);
   $("splitPane").classList.toggle("preview-hidden", !previewVisible);
-  $("togglePreviewBtn").textContent = previewVisible ? "Hide Drawing Preview" : "Show Drawing Preview";
+  $("togglePreviewBtn").textContent = previewVisible ? "Hide Preview" : "Show Preview";
 });
 
 $("previewImg").addEventListener("click", () => {
@@ -701,10 +1475,12 @@ dz.addEventListener("drop", async (e) => {
   dz.classList.remove("dragover");
   const f = e.dataTransfer.files[0];
   if (f) {
-    $("pdfInput").files = e.dataTransfer.files;
+    try { $("pdfInput").files = e.dataTransfer.files; } catch (_) {}
     await parseSelectedFile(f);
   }
 });
+
+applyTheme(document.documentElement.dataset.theme || "light");
 </script>
 </body>
 </html>

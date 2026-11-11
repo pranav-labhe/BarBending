@@ -1,248 +1,1068 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0f172a" />
-  <title>Bar Bending Schedule (BBS) — Browser &amp; iPhone App</title>
+  <meta name="theme-color" content="#0b1120" />
+  <title>Bar Bending Studio — On-Device CAD BBS</title>
   <link rel="manifest" href="./manifest.webmanifest" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("bbs_theme");
+        if (saved === "dark" || saved === "light") {
+          document.documentElement.dataset.theme = saved;
+        }
+      } catch (_) {}
+    })();
+  </script>
   <style>
     :root {
+      color-scheme: light;
       --bg: #f1f5f9;
+      --bg-grid: rgba(15, 23, 42, 0.045);
       --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --surface-elevated: #ffffff;
       --ink: #0f172a;
-      --muted: #475569;
-      --border: #cbd5e1;
-      --accent: #1e40af;
-      --success-bg: #dcfce7;
-      --warn-bg: #fef9c3;
+      --ink-secondary: #334155;
+      --muted: #64748b;
+      --border: #dbe2ea;
+      --border-strong: #cbd5e1;
+      --header-bg: rgba(11, 17, 32, 0.96);
+      --header-ink: #f8fafc;
+      --header-border: rgba(148, 163, 184, 0.16);
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: rgba(37, 99, 235, 0.1);
+      --export: #059669;
+      --export-hover: #047857;
+      --export-soft: rgba(5, 150, 105, 0.12);
+      --share: #0284c7;
+      --share-hover: #0369a1;
+      --warn-bg: #fefce8;
+      --warn-row-bg: #fef9c3;
       --warn-border: #eab308;
+      --warn-ink: #854d0e;
+      --warn-chip: #fef08a;
+      --danger: #dc2626;
+      --danger-soft: rgba(220, 38, 38, 0.1);
+      --th-bg: #f1f5f9;
+      --row-hover: #f8fafc;
+      --input-bg: #ffffff;
+      --shape-stroke: #1d4ed8;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 8px 24px -12px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #070b14;
+      --bg-grid: rgba(148, 163, 184, 0.065);
+      --surface: #111827;
+      --surface-subtle: #0d1322;
+      --surface-elevated: #162033;
+      --ink: #f1f5f9;
+      --ink-secondary: #cbd5e1;
+      --muted: #94a3b8;
+      --border: #1f2937;
+      --border-strong: #334155;
+      --header-bg: rgba(7, 11, 20, 0.94);
+      --header-ink: #f8fafc;
+      --header-border: rgba(148, 163, 184, 0.14);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-soft: rgba(59, 130, 246, 0.16);
+      --export: #10b981;
+      --export-hover: #059669;
+      --export-soft: rgba(16, 185, 129, 0.14);
+      --share: #0ea5e9;
+      --share-hover: #0284c7;
+      --warn-bg: rgba(245, 158, 11, 0.1);
+      --warn-row-bg: rgba(245, 158, 11, 0.13);
+      --warn-border: #d97706;
+      --warn-ink: #fcd34d;
+      --warn-chip: rgba(245, 158, 11, 0.24);
+      --danger: #f87171;
+      --danger-soft: rgba(248, 113, 113, 0.14);
+      --th-bg: #162033;
+      --row-hover: rgba(148, 163, 184, 0.07);
+      --input-bg: #0b1120;
+      --shape-stroke: #60a5fa;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--ink);
+      font-family: var(--font-sans);
       font-size: 13px;
+      line-height: 1.45;
+      color: var(--ink);
+      background-color: var(--bg);
+      background-image:
+        linear-gradient(to right, var(--bg-grid) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--bg-grid) 1px, transparent 1px);
+      background-size: 24px 24px;
+      -webkit-font-smoothing: antialiased;
     }
-    header {
-      background: #0f172a;
+
+    .mono, .num, td.num input, .kpi .val, .audit-chip {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Sticky Top Studio Header */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--header-bg);
+      color: var(--header-ink);
+      border-bottom: 1px solid var(--header-border);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding: 10px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+    }
+    .brand-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+    .brand-title-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      background: rgba(16, 185, 129, 0.16);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Buttons & Inputs */
+    button, select, input[type="number"], input[type="text"], input[type="search"] {
+      font: inherit;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--input-bg);
+      color: var(--ink);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease;
+    }
+    select, input[type="number"], input[type="text"], input[type="search"] {
+      padding: 6px 9px;
+    }
+    select:focus, input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12.5px;
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: var(--shadow-sm);
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) {
+      border-color: var(--muted);
+      background: var(--surface-subtle);
+    }
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .topbar button.ghost-dark {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.16);
       color: #f8fafc;
-      padding: 12px 16px;
+      box-shadow: none;
+    }
+    .topbar button.ghost-dark:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: transparent;
+    }
+    button.primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      border-color: transparent;
+    }
+    button.export {
+      background: var(--export);
+      color: #fff;
+      border-color: transparent;
+    }
+    button.export:hover:not(:disabled) {
+      background: var(--export-hover);
+      border-color: transparent;
+    }
+    button.share {
+      background: var(--share);
+      color: #fff;
+      border-color: transparent;
+    }
+    button.share:hover:not(:disabled) {
+      background: var(--share-hover);
+      border-color: transparent;
+    }
+    button svg {
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+    }
+
+    main {
+      max-width: 1720px;
+      margin: 0 auto;
+      padding: 16px 18px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-md);
+    }
+    .panel-header {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+      margin-bottom: 12px;
     }
-    .brand { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    .brand h1 { margin: 0; font-size: 16px; font-weight: 600; }
-    .pill {
-      display: inline-block;
-      padding: 3px 9px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      background: #14532d;
-      color: #bbf7d0;
-    }
-    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-    button, select, input[type="number"], input[type="text"] {
-      font: inherit;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      padding: 7px 10px;
-      background: #fff;
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
       color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
     }
-    button { cursor: pointer; font-weight: 600; }
-    button.primary { background: #2563eb; color: #fff; border-color: #1d4ed8; }
-    button.export { background: #16a34a; color: #fff; border-color: #15803d; }
-    button.share { background: #0284c7; color: #fff; border-color: #0369a1; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    main { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+    .panel-kicker {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    /* File:// origin alert & toast notifications */
+    .origin-banner {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      color: var(--warn-ink);
+      border-radius: var(--radius-md);
       padding: 12px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12.5px;
     }
+    .origin-banner code {
+      font-family: var(--font-mono);
+      background: rgba(15, 23, 42, 0.12);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11.5px;
+    }
+
+    .toast-region {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      z-index: 60;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 380px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      background: var(--surface-elevated);
+      color: var(--ink);
+      border: 1px solid var(--border-strong);
+      border-left: 4px solid var(--primary);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12.5px;
+      animation: toastIn 0.18s ease-out;
+    }
+    .toast.success { border-left-color: var(--export); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.warn { border-left-color: var(--warn-border); }
+    .toast button {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      padding: 0 4px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Pipeline + Hero Upload Dropzone */
+    .pipeline-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .step-chip {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 11px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .step-chip strong { display: block; font-size: 12px; color: var(--ink); }
+    .step-chip span { display: block; font-size: 11px; color: var(--muted); }
+
     .upload-zone {
-      border: 2px dashed #94a3b8;
-      background: #f8fafc;
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--surface-subtle);
+      padding: 14px 16px;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 14px;
+      transition: border-color 0.15s ease, background 0.15s ease;
     }
-    .upload-zone.dragover { border-color: #2563eb; background: #eff6ff; }
+    .upload-zone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .upload-info {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      flex: 1 1 300px;
+      min-width: 0;
+    }
+    .upload-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .upload-info h2 {
+      margin: 0 0 2px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .guide { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .file-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-size: 11.5px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+
+    /* Accessible styled file picker button (preserves native iOS Safari picker) */
+    .file-picker-btn {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+    .file-picker-btn:hover {
+      background: var(--surface-subtle);
+      border-color: var(--muted);
+    }
+    .file-picker-btn input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .check-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      cursor: pointer;
+    }
+
+    /* Metadata & Settings */
+    .settings-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .field.wide { grid-column: span 2; }
+    .field label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field input, .field select { width: 100%; min-width: 0; }
+
+    /* KPI Telemetry Strip */
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
-      gap: 8px;
+      grid-template-columns: minmax(220px, 1.45fr) repeat(auto-fit, minmax(115px, 1fr));
+      gap: 10px;
     }
     .kpi {
-      background: #f8fafc;
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 10px;
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 4px;
     }
-    .kpi .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; }
-    .kpi .val { font-size: 16px; font-weight: 700; margin-top: 2px; }
-    .kpi.highlight { background: var(--success-bg); border-color: #86efac; }
-    .settings-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
-    .field { display: flex; flex-direction: column; gap: 3px; }
-    .field label { font-size: 11px; color: var(--muted); font-weight: 600; }
-    .field input, .field select { padding: 5px 8px; min-width: 85px; }
+    .kpi .lbl {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .kpi .val {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--ink);
+      font-family: var(--font-mono);
+    }
+    .kpi .sub { font-size: 11px; color: var(--muted); }
+    .kpi-bar {
+      height: 3px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+      margin-top: 2px;
+    }
+    .kpi-bar > span {
+      display: block;
+      height: 100%;
+      background: var(--primary);
+      border-radius: 999px;
+    }
+    .kpi.highlight {
+      background: linear-gradient(135deg, var(--export-soft) 0%, var(--surface) 75%);
+      border-color: var(--export);
+    }
+    .kpi.highlight .val {
+      font-size: 19px;
+      color: var(--export);
+    }
+
+    /* Split Workspace */
     .split {
       display: grid;
-      grid-template-columns: 350px 1fr;
-      gap: 12px;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 14px;
       align-items: start;
     }
-    .split.preview-hidden { grid-template-columns: 1fr; }
-    .preview-box { position: sticky; top: 10px; max-height: 80vh; overflow: auto; }
-    .preview-box img { width: 100%; border: 1px solid var(--border); border-radius: 4px; cursor: zoom-in; }
+    .split.preview-hidden { grid-template-columns: minmax(0, 1fr); }
+    .preview-box {
+      position: sticky;
+      top: 70px;
+      max-height: calc(100vh - 86px);
+      overflow: auto;
+    }
+    .preview-frame {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      overflow: auto;
+      max-height: 52vh;
+    }
+    .preview-box img {
+      display: block;
+      width: 100%;
+      cursor: zoom-in;
+      background: #fff;
+    }
     .preview-box img.zoomed { width: 240%; max-width: none; cursor: zoom-out; }
-    .table-wrap { overflow: auto; max-height: 76vh; border: 1px solid var(--border); border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .preview-empty {
+      padding: 26px 14px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .audit-group { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .audit-row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 11.5px; }
+    .audit-lbl { font-weight: 700; color: var(--ink-secondary); min-width: 112px; }
+    .audit-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink);
+    }
+
+    /* Grid Header, Search/Filter & Action + Yellow Statement Bar */
+    .grid-panel { padding: 12px 14px; min-width: 0; }
+    .grid-top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .grid-filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-input {
+      width: 195px;
+      padding: 5px 9px !important;
+      font-size: 12px;
+    }
+    .seg-group {
+      display: inline-flex;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      padding: 2px;
+      gap: 2px;
+    }
+    .seg-btn {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      gap: 0;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      border-radius: 4px;
+      color: var(--muted);
+    }
+    .seg-btn.active {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Export buttons directly BEFORE "Yellow = inferred from plan/sections" */
+    .grid-action-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      margin-bottom: 10px;
+      border-radius: var(--radius-sm);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+    }
+    .export-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--warn-ink);
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn-border);
+      flex-shrink: 0;
+    }
+
+    /* High-Precision Data Table */
+    .table-wrap {
+      overflow: auto;
+      max-height: 74vh;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
     th {
-      position: sticky; top: 0; background: #e2e8f0; z-index: 2;
-      padding: 7px 6px; text-align: center;
-      border-bottom: 2px solid #94a3b8; border-right: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: var(--th-bg);
+      color: var(--ink-secondary);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 9px 7px;
+      text-align: center;
+      border-bottom: 1px solid var(--border-strong);
+      border-right: 1px solid var(--border);
       white-space: nowrap;
     }
-    td { padding: 4px 5px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; vertical-align: middle; }
-    tr.inferred { background: var(--warn-bg); }
-    td input {
-      width: 100%; padding: 4px 5px; border: 1px solid transparent;
-      background: transparent; border-radius: 4px; font-size: 12px;
+    td {
+      padding: 4px 5px;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      vertical-align: middle;
     }
-    td input:hover, td input:focus { border-color: #94a3b8; background: #fff; outline: none; }
-    td.num input { text-align: right; }
-    .warn-list { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 8px 12px; font-size: 12px; }
-    .badge-inf { background: #fef08a; color: #854d0e; font-size: 10px; padding: 1px 5px; border-radius: 4px; font-weight: 600; }
-    .shape-cell { min-width: 118px; text-align: center; }
+    tbody tr:hover td { background: var(--row-hover); }
+    tr.inferred td { background: var(--warn-row-bg); }
+    tr.inferred td:first-child { box-shadow: inset 3px 0 0 var(--warn-border); }
+    td input {
+      width: 100%;
+      padding: 4px 6px;
+      border: 1px solid transparent;
+      background: transparent;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--ink);
+    }
+    td input:hover, td input:focus {
+      border-color: var(--primary);
+      background: var(--input-bg);
+      box-shadow: none;
+    }
+    td.num input { text-align: right; font-family: var(--font-mono); }
+    .calc-cell {
+      text-align: right;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      padding-right: 8px;
+      white-space: nowrap;
+    }
+    .warn-list {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      color: var(--warn-ink);
+      border-radius: var(--radius-sm);
+      padding: 10px 13px;
+      font-size: 12px;
+    }
+    .badge-inf {
+      display: inline-block;
+      margin-top: 2px;
+      background: var(--warn-chip);
+      color: var(--warn-ink);
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .shape-cell { min-width: 128px; text-align: center; }
+    .shape-cell svg polyline,
+    .shape-cell svg rect,
+    .shape-cell svg line,
+    .shape-cell svg path {
+      stroke: var(--shape-stroke);
+    }
+    .shape-cell svg text {
+      fill: var(--ink);
+      font-family: var(--font-mono);
+    }
+    .del-btn {
+      padding: 4px 8px;
+      color: var(--danger);
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+    }
+    .del-btn:hover:not(:disabled) {
+      background: var(--danger-soft);
+      border-color: transparent;
+    }
+    .empty-filter {
+      text-align: center;
+      padding: 26px 14px;
+      color: var(--muted);
+    }
     .hidden { display: none !important; }
-    .guide { color: var(--muted); font-size: 12px; line-height: 1.5; }
-    @media (max-width: 1100px) {
+
+    @media (max-width: 1120px) {
       .split { grid-template-columns: 1fr; }
-      .preview-box { position: static; max-height: 45vh; }
+      .preview-box { position: static; max-height: none; }
       .table-wrap { max-height: none; -webkit-overflow-scrolling: touch; }
     }
     @media (max-width: 768px) {
+      .pipeline-strip { grid-template-columns: 1fr; }
+      .field.wide { grid-column: span 1; }
+      .search-input { width: 100%; }
       input, select, td input { font-size: 16px; }
       button { padding: 9px 12px; }
+      .toast-region { bottom: 14px; left: 12px; right: 12px; max-width: none; }
     }
   </style>
 </head>
 <body>
-<header>
+<header class="topbar">
   <div class="brand">
-    <h1>Bar Bending Schedule (BBS)</h1>
-    <span class="pill">ON-DEVICE • NO SERVER • NO API</span>
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 6v11a2 2 0 0 0 2 2h12"/>
+        <path d="M9 5h10v10"/>
+      </svg>
+    </div>
+    <div class="brand-copy">
+      <div class="brand-title-row">
+        <h1>Bar Bending Studio</h1>
+        <span class="pill"><span class="pill-dot"></span>ON-DEVICE • NO SERVER • NO API</span>
+      </div>
+      <div class="brand-sub">CAD Structural PDF → Editable IS 456 Grid → Formula + DrawingML Workbook</div>
+    </div>
   </div>
   <div class="toolbar">
-    <button id="togglePreviewBtn" type="button" disabled>Hide Drawing Preview</button>
-    <button id="addRowBtn" type="button" disabled>+ Add Row</button>
-    <button id="shareBtn" class="share" type="button" disabled>Share / Open in Excel</button>
-    <button id="exportBtn" class="export" type="button" disabled>Download .xlsx</button>
+    <button id="themeToggleBtn" class="ghost-dark" type="button" title="Switch Light / CAD Dark theme">
+      <span id="themeIcon"></span>
+      <span id="themeLabel">CAD Dark</span>
+    </button>
+    <button id="togglePreviewBtn" class="ghost-dark" type="button" disabled>Hide Preview</button>
+    <button id="addRowBtn" class="ghost-dark" type="button" disabled>+ Add Row</button>
   </div>
 </header>
 
+<div id="toastRegion" class="toast-region" aria-live="polite"></div>
+
 <main>
-  <section class="panel upload-zone" id="dropZone">
+  <div id="fileOriginWarn" class="origin-banner hidden">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:2px;">
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
     <div>
-      <strong>Select Structural CAD PDF (Runs Locally on Your iPhone / Browser)</strong>
-      <div class="guide">
-        Your drawing never leaves your device. Pick a PDF from iPhone <b>Files</b> or desktop, review yellow <i>verify</i> cells, then tap <b>Share / Open in Excel</b> or <b>Download .xlsx</b>.
+      <strong>Opened directly from disk (<code>file://</code>):</strong> Browsers block PDF.js Web Workers on <code>file://</code> URLs, so PDF parsing cannot run directly. Open the live GitHub Pages URL or serve locally with <code>python -m http.server 8080 --directory docs</code>. You can still test manual entries using <strong>Start Blank Schedule</strong> below.
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="pipeline-strip">
+      <div class="step-chip">
+        <span class="step-num">01</span>
+        <div><strong>Extract CAD Vectors</strong><span>Reads vector text, SHX annotations &amp; plan counts in-browser</span></div>
+      </div>
+      <div class="step-chip">
+        <span class="step-num">02</span>
+        <div><strong>Verify Highlighted Bars</strong><span>Inspect yellow inferred items side-by-side with PDF preview</span></div>
+      </div>
+      <div class="step-chip">
+        <span class="step-num">03</span>
+        <div><strong>Export Native .xlsx</strong><span>Generates live Excel formulas &amp; DrawingML rebar sketches</span></div>
       </div>
     </div>
-    <div class="toolbar">
-      <select id="uploadMode">
-        <option value="sample_compat" selected>Sample-Compatible Rules</option>
-        <option value="strict_geometry">Strict Uniform Geometry</option>
-      </select>
-      <label style="display:flex;align-items:center;gap:4px;font-size:12px;">
-        <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
-      </label>
-      <input type="file" id="pdfInput" accept="application/pdf,.pdf" />
-      <button id="parseBtn" class="primary" type="button">Parse PDF</button>
+
+    <div class="upload-zone" id="dropZone">
+      <div class="upload-info">
+        <div class="upload-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/>
+          </svg>
+        </div>
+        <div>
+          <h2>Select or Drop Structural CAD PDF</h2>
+          <div class="guide">
+            100% local processing inside your browser or iPhone Safari — drawings never leave your device.
+          </div>
+          <div id="selectedFileBadge" class="file-pill hidden"></div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select id="uploadMode" title="Calculation Rule Engine">
+          <option value="sample_compat" selected>Sample-Compatible Rules</option>
+          <option value="strict_geometry">Strict Uniform Geometry</option>
+        </select>
+        <label class="check-pill">
+          <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
+        </label>
+        <label class="file-picker-btn">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>Choose PDF</span>
+          <input type="file" id="pdfInput" accept="application/pdf,.pdf" />
+        </label>
+        <button id="parseBtn" class="primary" type="button">Parse PDF</button>
+        <button id="blankBtn" type="button" title="Open an editable starter BBS without a PDF">Start Blank Schedule</button>
+      </div>
     </div>
   </section>
 
-  <section id="workspace" class="hidden" style="display:flex;flex-direction:column;gap:12px;">
+  <section id="workspace" class="hidden" style="display:flex;flex-direction:column;gap:14px;">
     <div id="warnBox" class="warn-list hidden"></div>
 
     <div class="panel">
-      <div class="settings-bar">
-        <div class="field" style="flex:1;min-width:160px;">
-          <label>Project</label>
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Project &amp; IS 456 Parameters</span>
+          <div class="panel-title">Drawing Metadata &amp; Cover Configuration</div>
+        </div>
+        <button id="rebuildBtn" class="primary" type="button">Rebuild Rules</button>
+      </div>
+      <div class="settings-bar" id="metaBar">
+        <div class="field wide">
+          <label for="metaProject">Project</label>
           <input type="text" id="metaProject" />
         </div>
-        <div class="field" style="min-width:130px;">
-          <label>Drawing No</label>
+        <div class="field">
+          <label for="metaDrawing">Drawing No</label>
           <input type="text" id="metaDrawing" />
         </div>
-        <div class="field" style="min-width:130px;">
-          <label>Location</label>
+        <div class="field">
+          <label for="metaLocation">Location</label>
           <input type="text" id="metaLocation" />
         </div>
-        <div class="field" style="flex:1;min-width:170px;">
-          <label>Structure</label>
+        <div class="field wide">
+          <label for="metaStructure">Structure</label>
           <input type="text" id="metaStructure" />
         </div>
         <div class="field">
-          <label>Footing Cover</label>
-          <input type="number" id="setFootCov" style="width:82px;" />
+          <label for="setFootCov">Footing Cover (mm)</label>
+          <input type="number" id="setFootCov" />
         </div>
         <div class="field">
-          <label>Col Cover</label>
-          <input type="number" id="setColCov" style="width:82px;" />
+          <label for="setColCov">Col Cover (mm)</label>
+          <input type="number" id="setColCov" />
         </div>
         <div class="field">
-          <label>Col Height</label>
-          <input type="number" id="setColHt" style="width:92px;" />
+          <label for="setColHt">Col Height (mm)</label>
+          <input type="number" id="setColHt" />
         </div>
         <div class="field">
-          <label>Rule Mode</label>
+          <label for="setMode">Rule Mode</label>
           <select id="setMode">
             <option value="sample_compat">Sample-Compatible</option>
             <option value="strict_geometry">Strict Geometry</option>
           </select>
         </div>
         <div class="field">
-          <label>Round Up</label>
+          <label for="setRoundUp">Round Up</label>
           <select id="setRoundUp">
             <option value="false">Exact</option>
             <option value="true">ROUNDUP</option>
           </select>
         </div>
-        <button id="rebuildBtn" class="primary" type="button">Rebuild Rules</button>
       </div>
     </div>
 
     <div class="kpi-grid" id="kpiGrid"></div>
 
     <div class="split" id="splitPane">
-      <div class="panel preview-box" id="previewPane">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <strong>Drawing Reference (Tap to Zoom)</strong>
-          <span id="planStatsLabel" style="font-size:11px;color:var(--muted);"></span>
+      <aside class="panel preview-box" id="previewPane">
+        <div class="panel-header" style="margin-bottom:8px;">
+          <div>
+            <span class="panel-kicker">CAD Reference</span>
+            <div class="panel-title">Drawing Preview</div>
+          </div>
+          <span id="planStatsLabel" class="audit-chip"></span>
         </div>
-        <img id="previewImg" alt="Uploaded PDF Drawing Preview" />
-        <div id="planAudit" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
-      </div>
+        <div class="preview-frame">
+          <img id="previewImg" alt="Uploaded PDF Drawing Preview" class="hidden" />
+          <div id="previewEmptyState" class="preview-empty">
+            No PDF drawing loaded yet. Drop a CAD PDF above to inspect plan annotations side-by-side.
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Tip: Click or tap drawing to toggle 2.4× zoom.</div>
+        <div id="planAudit" class="audit-group"></div>
+      </aside>
 
-      <div class="panel" style="padding:8px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:0 4px;">
-          <strong>Editable BBS Grid (<span id="rowCountLabel">0</span> rows)</strong>
-          <span style="font-size:11px;color:var(--muted);">Yellow = inferred from plan/sections</span>
+      <div class="panel grid-panel">
+        <div class="grid-top-bar">
+          <div class="panel-title">
+            <span>Editable BBS Grid (<span id="rowCountLabel">0</span> rows)</span>
+            <span id="visibleCountBadge" class="audit-chip hidden"></span>
+          </div>
+          <div class="grid-filters">
+            <input type="search" id="gridSearch" class="search-input" placeholder="Search mark, desc, remark..." />
+            <div class="seg-group" role="group" aria-label="Filter BBS rows">
+              <button type="button" id="filterAllBtn" class="seg-btn active">All</button>
+              <button type="button" id="filterVerifyBtn" class="seg-btn">Verify Only (<span id="verifyCountLabel">0</span>)</button>
+            </div>
+          </div>
         </div>
+
+        <div class="grid-action-strip">
+          <div class="export-actions">
+            <button id="shareBtn" class="share" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              <span>Share / Open in Excel</span>
+            </button>
+            <button id="exportBtn" class="export" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span>Download .xlsx</span>
+            </button>
+          </div>
+          <span class="legend-note"><span class="legend-dot"></span>Yellow = inferred from plan/sections</span>
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
@@ -265,6 +1085,10 @@
             </thead>
             <tbody id="bbsTbody"></tbody>
           </table>
+          <div id="emptyFilterMsg" class="empty-filter hidden">
+            No BBS rows match the current filter.
+            <button type="button" id="clearFilterBtn" style="margin-left:8px;">Reset Filter</button>
+          </div>
         </div>
       </div>
     </div>

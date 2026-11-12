@@ -11,7 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from app.bbs_calculator import recalculate_document
 from app.drawingml_injector import inject_drawingml_shapes
-from app.formula_engine import GLOBAL_CONST_CELLS, resolve_row_formula
+from app.formula_engine import GLOBAL_CONST_CELLS, format_exact, resolve_row_formula
 from app.models import DIAMETER_COLUMNS, BbsDocument, ShapeSpec
 
 COL_WIDTHS: dict[int, float] = {
@@ -162,10 +162,9 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
             cell.alignment = Alignment(horizontal="left", vertical="center")
             cell.border = CELL_BORDER
 
-    # Explicit global constant cells ($P$3, $O$4, $Q$4, $S$2:$Y$4)
+    # Explicit global constant cells ($P$3, $O$4, $S$2:$Y$4)
     _set_const_pair(ws, 3, 15, 16, "SW Dowel", recalc.settings.sw_dowel_mm, const_lbl_font, const_val_font)
     _set_const_pair(ws, 4, 14, 15, "SW Inner Off", recalc.settings.sw_inner_offset_mm, const_lbl_font, const_val_font)
-    _set_const_pair(ws, 4, 16, 17, "Tie Compat Ht", recalc.settings.compat_tie_ht_mm, const_lbl_font, const_val_font)
 
     const_layout = [
         (2, 18, 19, "$S$2"),
@@ -195,12 +194,16 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         )
 
     # Row-count indices precomputed so P5 header can reference grand_row & $Y$3 dynamically
+    cached_values: dict[str, tuple[float | str, bool]] = {}
     data_start_row = 8
     last_data_row = data_start_row + max(0, len(recalc.rows) - 1)
     sum_row = last_data_row + 2
     lbl_row = sum_row + 1
     grand_row = sum_row + 2
     note_row = sum_row + 3
+
+    total_kg_exact = format_exact(recalc.total_weight_mt * float(recalc.settings.scale_divisor or 1000.0))
+    cached_values["P5"] = (f"Total WT. IN KG. ({total_kg_exact})", True)
 
     # Rows 5-6: Main Table Headers (A..Y) + Row Parameter Headers (Z..AE)
     hdr_font = Font(name="Calibri Light", size=18, bold=True)
@@ -302,7 +305,8 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         span_f, _, _ = resolve_row_formula(row.span_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if span_f:
             ws.cell(cur_row, 4, span_f)
-        elif row.span_mm > 0:
+            cached_values[f"D{cur_row}"] = (row.span_mm, False)
+        else:
             ws.cell(cur_row, 4, row.span_mm)
         ws.cell(cur_row, 4).number_format = EXACT_FMT
 
@@ -319,7 +323,8 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         nos_f, _, _ = resolve_row_formula(row.nos_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if nos_f:
             ws.cell(cur_row, 11, nos_f)
-        elif row.nos > 0 or row.group_key not in ("CHAIRS", "SPACERS"):
+            cached_values[f"K{cur_row}"] = (row.nos, False)
+        else:
             ws.cell(cur_row, 11, row.nos)
         ws.cell(cur_row, 11).number_format = EXACT_FMT
 
@@ -327,42 +332,40 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         mult_f, _, _ = resolve_row_formula(row.multiple_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if mult_f:
             ws.cell(cur_row, 12, mult_f)
-        elif row.multiple_no > 0 or row.group_key not in ("CHAIRS", "SPACERS"):
+            cached_values[f"L{cur_row}"] = (row.multiple_no, False)
+        else:
             ws.cell(cur_row, 12, row.multiple_no)
         ws.cell(cur_row, 12).number_format = EXACT_FMT
 
-        # Total Nos (Col M) -> Live Formula =+L*K
-        is_special_empty = row.group_key in ("CHAIRS", "SPACERS") and row.nos == 0
-        if not is_special_empty:
-            ws.cell(cur_row, 13, f"=+L{cur_row}*K{cur_row}")
-            ws.cell(cur_row, 13).number_format = EXACT_FMT
+        # Total Nos (Col M) -> Always live formula =+L*K on every row
+        ws.cell(cur_row, 13, f"=+L{cur_row}*K{cur_row}")
+        ws.cell(cur_row, 13).number_format = EXACT_FMT
+        cached_values[f"M{cur_row}"] = (row.total_nos, False)
 
         # Cut Length (Col N)
         cut_f, _, _ = resolve_row_formula(row.cut_length_expr, idx, recalc.rows, recalc.settings, first_tie_r)
         if cut_f:
             ws.cell(cur_row, 14, cut_f)
+            cached_values[f"N{cur_row}"] = (row.cut_length_mm, False)
         else:
             ws.cell(cur_row, 14, row.cut_length_mm)
         ws.cell(cur_row, 14).number_format = EXACT_FMT
 
         # Coupler (Col O)
-        if row.group_key not in ("CHAIRS", "SPACERS"):
-            ws.cell(cur_row, 15, row.coupler)
+        ws.cell(cur_row, 15, row.coupler)
 
-        # Dia-wise Weight (Cols P..X) -> Live Excel Formula referencing $W$3 (162) & $Y$3 (1000)
+        # Dia-wise Weight (Cols P..X) -> Always live formula referencing $W$3 (162) & $Y$3 (1000)
         for d_idx in range(len(DIAMETER_COLUMNS)):
             col_c = 16 + d_idx
             col_let = get_column_letter(col_c)
-            if is_special_empty:
-                if row.weight_kg > 0 and DIAMETER_COLUMNS[d_idx] == row.dia_mm:
-                    ws.cell(cur_row, col_c, row.weight_kg)
-            else:
-                ws.cell(
-                    cur_row,
-                    col_c,
-                    f"=IF($E{cur_row}={col_let}$6,$M{cur_row},0)*($N{cur_row}*$E{cur_row}*$E{cur_row}/($W$3*$Y$3))",
-                )
+            ws.cell(
+                cur_row,
+                col_c,
+                f"=IF($E{cur_row}={col_let}$6,$M{cur_row},0)*($N{cur_row}*$E{cur_row}*$E{cur_row}/($W$3*$Y$3))",
+            )
             ws.cell(cur_row, col_c).number_format = EXACT_FMT
+            cached_w = row.weight_kg if abs(float(DIAMETER_COLUMNS[d_idx]) - float(row.dia_mm)) < 1e-9 else 0.0
+            cached_values[f"{col_let}{cur_row}"] = (cached_w, False)
 
         # Remark (Col Y)
         if row.remark:
@@ -423,6 +426,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
         c_sum = ws.cell(sum_row, col_c, f"=SUM({col_let}{data_start_row}:{col_let}{last_data_row})/$Y$3")
         c_sum.font = Font(name="Calibri Light", size=14, bold=True)
         c_sum.number_format = EXACT_FMT
+        cached_values[f"{col_let}{sum_row}"] = (float(recalc.totals_by_dia_mt.get(dia, 0.0)), False)
         ws.cell(lbl_row, col_c, f"{dia} mm" if dia == 8 else f"{dia}mm").font = desc_font
 
     for c in range(1, 26):
@@ -438,6 +442,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     ws.cell(grand_row, 1, "Total Weight (MT)").font = hdr_font
     ws.cell(grand_row, 1).alignment = Alignment(horizontal="right", vertical="center")
     gt_cell = ws.cell(grand_row, 16, f"=SUM(P{sum_row}:X{sum_row})")
+    cached_values[f"P{grand_row}"] = (float(recalc.total_weight_mt), False)
     gt_cell.font = hdr_font
     gt_cell.number_format = EXACT_FMT
     gt_cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -462,4 +467,4 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
 
     buf = io.BytesIO()
     wb.save(buf)
-    return inject_drawingml_shapes(buf.getvalue(), shape_rows)
+    return inject_drawingml_shapes(buf.getvalue(), shape_rows, cached_values=cached_values)

@@ -491,6 +491,199 @@ def _flood_fill_region(
     return region
 
 
+def _extract_nested_shaft_dims(
+    cfr: pymupdf.Rect,
+    nested_rects: list[pymupdf.Rect],
+    plan_tokens: list[PdfToken],
+    plan_scale: float,
+) -> Optional[tuple[float, float]]:
+    """Derive enclosed shear-wall / lift core dimensions strictly from CAD geometry & dims."""
+    if plan_scale <= 0:
+        return None
+    outer_box = pymupdf.Rect(cfr.x0 - 2, cfr.y0 - 2, cfr.x1 + 2, cfr.y1 + 2)
+    inner_cands = [
+        r for r in nested_rects
+        if outer_box.contains(r)
+        and 0.30 * cfr.width <= r.width <= 0.90 * cfr.width
+        and 0.30 * cfr.height <= r.height <= 0.90 * cfr.height
+    ]
+    if not inner_cands:
+        return None
+    outer_sw = max(inner_cands, key=lambda r: r.width * r.height)
+    raw_w = outer_sw.width / plan_scale
+    raw_h = outer_sw.height / plan_scale
+
+    expanded = pymupdf.Rect(cfr.x0 - 20, cfr.y0 - 20, cfr.x1 + 20, cfr.y1 + 20)
+    h_cands: list[float] = []
+    v_cands: list[float] = []
+    for t in plan_tokens:
+        if not expanded.contains(pymupdf.Point(t.cx, t.cy)) or not t.text.isdigit():
+            continue
+        val = float(t.text)
+        ori_h = (t.x1 - t.x0) >= (t.y1 - t.y0)
+        if ori_h and 0.75 * raw_w <= val <= 1.06 * raw_w:
+            h_cands.append(val)
+        elif (not ori_h) and 0.75 * raw_h <= val <= 1.06 * raw_h:
+            v_cands.append(val)
+
+    sw_b = min(h_cands, key=lambda v: abs(v - raw_w)) if h_cands else round(raw_w)
+    sw_l = min(v_cands, key=lambda v: abs(v - raw_h)) if v_cands else round(raw_h)
+    return float(sw_b), float(sw_l)
+
+
+def _extract_polygon_cf_segments(
+    ct: PdfToken,
+    all_drawings: list[dict],
+    mat: pymupdf.Matrix,
+    plan_box: pymupdf.Rect,
+    plan_tokens: list[PdfToken],
+    plan_scale: float,
+) -> tuple[list[dict[str, float | str]], Optional[float]]:
+    """Trace closed solid orthogonal boundary around a non-rectangular CF tag from vector paths."""
+    if plan_scale <= 0:
+        return [], None
+
+    raw_segs: list[tuple[float, float, float, float]] = []
+    for d in all_drawings:
+        r = d["rect"] * mat
+        if not plan_box.contains(r) or d.get("fill") is not None:
+            continue
+        dashes = str(d.get("dashes") or "[]").strip()
+        if not dashes.startswith("[]"):
+            continue
+        for it in d["items"]:
+            if it[0] == "l":
+                p1 = it[1] * mat
+                p2 = it[2] * mat
+                dx, dy = abs(p2.x - p1.x), abs(p2.y - p1.y)
+                span = max(dx, dy)
+                if span >= 12.0 and min(dx, dy) <= 1.0 and span < 350.0:
+                    mx, my = (p1.x + p2.x) * 0.5, (p1.y + p2.y) * 0.5
+                    if abs(mx - ct.cx) < 120.0 and abs(my - ct.cy) < 120.0:
+                        raw_segs.append((p1.x, p1.y, p2.x, p2.y))
+
+    if len(raw_segs) < 4:
+        return [], None
+
+    def snap(x: float, y: float) -> tuple[float, float]:
+        return (round(x * 2.0) / 2.0, round(y * 2.0) / 2.0)
+
+    adj: dict[tuple[float, float], list[tuple[float, float]]] = {}
+    edge_coords: dict[tuple[tuple[float, float], tuple[float, float]], tuple[float, float, float, float]] = {}
+    for x1, y1, x2, y2 in raw_segs:
+        a, b = snap(x1, y1), snap(x2, y2)
+        if a == b:
+            continue
+        adj.setdefault(a, [])
+        adj.setdefault(b, [])
+        if b not in adj[a]:
+            adj[a].append(b)
+        if a not in adj[b]:
+            adj[b].append(a)
+        key = (a, b) if a < b else (b, a)
+        edge_coords[key] = (x1, y1, x2, y2)
+
+    # Iteratively prune leaf nodes (<2 degree) to isolate closed cycles
+    changed = True
+    while changed:
+        changed = False
+        for k in list(adj.keys()):
+            if len(adj[k]) < 2:
+                for nb in adj[k]:
+                    if k in adj and k in adj.get(nb, []):
+                        adj[nb].remove(k)
+                del adj[k]
+                changed = True
+
+    if len(adj) < 4:
+        return [], None
+
+    # Find connected component enclosing ct
+    visited: set[tuple[float, float]] = set()
+    best_comp: list[tuple[float, float]] = []
+    for start in adj:
+        if start in visited:
+            continue
+        comp: list[tuple[float, float]] = []
+        stack = [start]
+        visited.add(start)
+        while stack:
+            cur = stack.pop()
+            comp.append(cur)
+            for nb in adj[cur]:
+                if nb not in visited:
+                    visited.add(nb)
+                    stack.append(nb)
+        if len(comp) >= 4:
+            xs_c = [p[0] for p in comp]
+            ys_c = [p[1] for p in comp]
+            if min(xs_c) - 4 <= ct.cx <= max(xs_c) + 4 and min(ys_c) - 4 <= ct.cy <= max(ys_c) + 4:
+                best_comp = comp
+                break
+
+    if not best_comp:
+        return [], None
+
+    comp_set = set(best_comp)
+    h_edges: list[tuple[float, float]] = []  # (y, len_pt)
+    v_edges: list[tuple[float, float]] = []  # (x, len_pt)
+    xs_b: list[float] = []
+    ys_b: list[float] = []
+    perim_pt = 0.0
+    for (a, b), (x1, y1, x2, y2) in edge_coords.items():
+        if a in comp_set and b in comp_set:
+            xs_b.extend((x1, x2))
+            ys_b.extend((y1, y2))
+            dx, dy = abs(x2 - x1), abs(y2 - y1)
+            length_pt = max(dx, dy)
+            perim_pt += length_pt
+            if dx >= dy:
+                h_edges.append(((y1 + y2) * 0.5, length_pt))
+            else:
+                v_edges.append(((x1 + x2) * 0.5, length_pt))
+
+    if not h_edges or not v_edges:
+        return [], None
+
+    bbox_x0, bbox_x1 = min(xs_b), max(xs_b)
+    bbox_y0, bbox_y1 = min(ys_b), max(ys_b)
+
+    w_full_mm = (bbox_x1 - bbox_x0) / plan_scale
+    h_full_mm = (bbox_y1 - bbox_y0) / plan_scale
+
+    # Snap measured edge lengths only to an explicit numeric token printed inside the polygon box
+    local_num_toks = [
+        float(t.text)
+        for t in plan_tokens
+        if bbox_x0 - 25 <= t.cx <= bbox_x1 + 25 and bbox_y0 - 25 <= t.cy <= bbox_y1 + 25 and t.text.isdigit()
+    ]
+    def _snap_dim(raw_mm: float) -> float:
+        for val in local_num_toks:
+            if raw_mm > 0 and abs(val - raw_mm) / raw_mm <= 0.015:
+                return val
+        return float(round(raw_mm))
+
+    h_lengths = sorted([e[1] / plan_scale for e in h_edges], reverse=True)
+    v_lengths = sorted([e[1] / plan_scale for e in v_edges], reverse=True)
+
+    w_long = _snap_dim(h_lengths[0] if h_lengths else w_full_mm)
+    w_short = _snap_dim(h_lengths[1]) if len(h_lengths) > 1 else w_long
+    h_full = _snap_dim(h_full_mm)
+
+    outer_v = [e[1] / plan_scale for e in v_edges if abs(e[0] - bbox_x0) < 3.0 or abs(e[0] - bbox_x1) < 3.0]
+    h_wide = _snap_dim(min(outer_v)) if outer_v else _snap_dim(v_lengths[-1])
+    h_narrow = max(100.0, float(round(h_full - h_wide)))
+    w_wings = max(100.0, float(round(w_long - w_short)))
+
+    segs = [
+        {"label": "LONG LOWER 1", "span": float(w_long), "dist": float(h_wide)},
+        {"label": "LONG LOWER 2", "span": float(w_short), "dist": float(h_narrow)},
+        {"label": "SHORT UPPER 1", "span": float(h_full), "dist": float(w_short)},
+        {"label": "SHORT UPPER 2", "span": float(h_wide), "dist": float(w_wings)},
+    ]
+    return segs, float(round(perim_pt / plan_scale))
+
+
 def _analyze_foundation_plan(
     page: pymupdf.Page,
     tokens: list[PdfToken],
@@ -515,15 +708,14 @@ def _analyze_foundation_plan(
     # Estimate plan scale (pt/mm) from matching CF* or box-footing rectangles in drawings
     all_drawings = page.get_drawings()
     plan_rects: list[pymupdf.Rect] = []
+    nested_rects: list[pymupdf.Rect] = []
     for d in all_drawings:
         r = d["rect"] * mat
-        if (
-            plan_box.contains(r)
-            and 35 < r.width < 320
-            and 35 < r.height < 320
-            and len(d["items"]) <= 4
-        ):
-            plan_rects.append(r)
+        if plan_box.contains(r) and d.get("fill") is None and len(d["items"]) <= 4:
+            if 18 < r.width < 320 and 18 < r.height < 320:
+                nested_rects.append(r)
+            if 35 < r.width < 320 and 35 < r.height < 320:
+                plan_rects.append(r)
 
     # Match CF* labels to direct enclosing rectangles first (CF1, CF2, CF4, CF5)
     cf_rect_regions: list[tuple[str, pymupdf.Rect]] = []
@@ -646,37 +838,25 @@ def _analyze_foundation_plan(
         if not in_poly_cf:
             box_counts[mark] += 1
 
-    # Extract SW1 lift shaft dimensions inside CF1 and CF2
-    cf_lift_dims: dict[str, tuple[int, int]] = {}
+    # Extract SW* lift/core shaft dimensions inside any CF* enclosing nested core walls
+    cf_lift_dims: dict[str, tuple[float, float]] = {}
     for cf_name, cfr in cf_rect_regions:
-        if cf_name in ("CF1", "CF2"):
-            expanded = pymupdf.Rect(cfr.x0 - 15, cfr.y0 - 15, cfr.x1 + 15, cfr.y1 + 15)
-            nums = [
-                int(t.text)
-                for t in plan_tokens
-                if expanded.contains(pymupdf.Point(t.cx, t.cy))
-                and t.text.isdigit()
-                and 1800 <= int(t.text) <= 3200
-            ]
-            # Look for 2810 & 2296 on CF1, 2110 / 2300 / 2366 on CF2
-            if cf_name == "CF1" and 2810 in nums and 2296 in nums:
-                cf_lift_dims["CF1"] = (2810, 2296)
-            elif cf_name == "CF2":
-                cf_lift_dims["CF2"] = (2300, 2366)
+        if cf_name not in cf_lift_dims:
+            dims = _extract_nested_shaft_dims(cfr, nested_rects, plan_tokens, plan_scale)
+            if dims is not None:
+                cf_lift_dims[cf_name] = dims
 
-    # Extract CF3 L-shape dimensions from plan
-    cf3_segments: list[dict[str, float | str]] = []
-    cf3_tokens = [t for t in plan_tokens if t.text in {"4213", "4214", "2490", "3500", "2550", "1240", "719"}]
-    if any(r.mark == "CF3" for r in schedule):
-        # Derive or confirm from plan numbers near CF3
-        cf3_segments = [
-            {"label": "LONG LOWER 1", "span": 6643, "dist": 2550, "cut_span": 6530, "dist_formula": "(2550-50)/125", "cut_formula": "635+6530+650-(2*12)"},
-            {"label": "LONG LOWER 2", "span": 3500, "dist": 2490, "cut_span": 3385, "dist_formula": "(2490-50)/125", "cut_formula": "635+3385+635-(2*12)"},
-            {"label": "SHORT UPPER 1", "span": 5040, "dist": 3500, "cut_span": 4925, "dist_formula": "(3500-12-100)/125", "cut_formula": "635+4925+635-(2*12)"},
-            {"label": "SHORT UPPER 2", "span": 2550, "dist": 1959, "cut_span": 2435, "dist_formula": "(1240+719-100-12)/125", "cut_formula": "635+2435+635-(2*12)"},
-        ]
-        if not cf3_tokens:
-            warnings.append("CF3 L-shaped segments could not be directly verified on plan; review CF3 dimensions.")
+    # Dynamically trace non-rectangular combined footing contours (e.g. CF3) without hardcoding dims
+    cf_poly_segments: dict[str, list[dict[str, float | str]]] = {}
+    cf_poly_perims: dict[str, Optional[float]] = {}
+    for ct in missing_cf_tags:
+        cname = ct.text.upper()
+        if cname in cf_poly_segments:
+            continue
+        segs, perim = _extract_polygon_cf_segments(ct, all_drawings, mat, plan_box, plan_tokens, plan_scale)
+        if segs:
+            cf_poly_segments[cname] = segs
+            cf_poly_perims[cname] = perim
 
     for row in schedule:
         if row.kind == "box_footing":
@@ -685,9 +865,16 @@ def _analyze_foundation_plan(
         elif row.kind == "combined_footing":
             row.combined_count = int(cf_counts.get(row.mark, 1))
             if row.mark in cf_lift_dims:
-                row.shaft_inner_b_mm, row.shaft_inner_l_mm = cf_lift_dims[row.mark]
-            if row.mark == "CF3":
-                row.l_shape_segments = cf3_segments
+                row.shaft_inner_b_mm, row.shaft_inner_l_mm = (
+                    int(round(cf_lift_dims[row.mark][0])),
+                    int(round(cf_lift_dims[row.mark][1])),
+                )
+            if row.mark in cf_poly_segments:
+                row.l_shape_segments = cf_poly_segments[row.mark]
+            elif row.footing_b_mm == 0 and row.footing_l_mm == 0:
+                warnings.append(
+                    f"Non-rectangular combined footing {row.mark} contour could not be isolated cleanly on plan; review segment spans."
+                )
         elif row.kind == "shear_wall":
             row.combined_count = 1
 

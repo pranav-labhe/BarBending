@@ -198,12 +198,11 @@
     s.scale_divisor = numInputOrDefault("setScaleDiv", 1000);
     s.sw_dowel_mm = numInputOrDefault("setSwDowel", 300);
     s.sw_inner_offset_mm = numInputOrDefault("setSwOff", 80);
-    s.compat_tie_ht_mm = numInputOrDefault("setCompatHt", 4500);
     s.shear_wall_ht_cf1_mm = numInputOrDefault("setCf1Ht", 1650);
     s.shear_wall_ht_cf2_mm = numInputOrDefault("setCf2Ht", 3000);
     s.tie_step_div_ge16 = numInputOrDefault("setTieDiv16", 6);
     s.tie_step_div_lt16 = numInputOrDefault("setTieDivLt16", 5);
-    s.mode = $("setMode").value;
+    s.mode = "strict_geometry";
     s.round_up_nos = $("setRoundUp").value === "true";
   }
 
@@ -463,7 +462,6 @@
     $("setScaleDiv").value = fmt(s.scale_divisor ?? 1000);
     $("setSwDowel").value = fmt(s.sw_dowel_mm ?? 300);
     $("setSwOff").value = fmt(s.sw_inner_offset_mm ?? 80);
-    $("setCompatHt").value = fmt(s.compat_tie_ht_mm ?? 4500);
     $("setCf1Ht").value = fmt(s.shear_wall_ht_cf1_mm);
     $("setCf2Ht").value = fmt(s.shear_wall_ht_cf2_mm);
     $("setTieDiv16").value = fmt(s.tie_step_div_ge16 ?? 6);

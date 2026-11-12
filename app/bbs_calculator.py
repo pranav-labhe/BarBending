@@ -100,7 +100,7 @@ def _build_box_footing_rows(
             param_ac=box_mult,
             param_ad=1.0,
             param_ae="Z=Depth(mm); AC=BoxQty; AD=Layers",
-            remark="c3 c6 attach" if (mark == "C3" and settings.mode == "sample_compat") else "",
+            remark="",
         )
     )
 
@@ -123,25 +123,12 @@ def _build_box_footing_rows(
             param_ac=box_mult,
             param_ad=1.0,
             param_ae="Z=Depth(mm); AC=BoxQty; AD=Layers",
-            remark="c3 c6 attach" if (mark == "C3" and settings.mode == "sample_compat") else "",
+            remark="",
         )
     )
 
     # 3. SIDE BARS — links directly to LONG LOWER Span/Dia and SHORT UPPER Span
-    sb_adj = 0.0
-    sb_inf = False
-    if settings.mode == "sample_compat":
-        if mark == "C1" and abs(b_eff - 2200) < 1e-6 and abs(l_eff - 2600) < 1e-6:
-            sb_adj = -22.0  # 16*8 hook vs 75+75 (128 - 150 = -22)
-        elif mark == "C3" and abs(b_eff - 2400) < 1e-6 and abs(l_eff - 2800) < 1e-6:
-            sb_adj = -2.0   # -(5*10) vs -(4*12)
-        elif mark == "C4" and abs(b_eff - 3000) < 1e-6 and abs(l_eff - 3400) < 1e-6:
-            sb_adj = -50.0  # extra -(5*10)
-        elif mark == "C6" and abs(b_eff - 2300) < 1e-6 and abs(l_eff - 2700) < 1e-6:
-            sb_adj = -40.0  # extra -(4*10)
-        hook_part = "+2*$U$3"
-    else:
-        hook_part = "+2*MAX($S$3*@SELF:E,$U$3)"
+    hook_part = "+2*MAX($S$3*@SELF:E,$U$3)"
     sb_span_expr = (
         f"=2*(@ID:{ll_id}:D-2*$S$2)+2*(@ID:{su_id}:D-2*$S$2)"
         f"{hook_part}-(4*@ID:{ll_id}:E)+@SELF:AB"
@@ -160,11 +147,11 @@ def _build_box_footing_rows(
             multiple_expr="=@SELF:AC*@SELF:AD",
             multiple_no=box_mult,
             cut_length_expr="=@SELF:D",
-            param_ab=sb_adj,
+            param_ab=0.0,
             param_ac=box_mult,
             param_ad=1.0,
-            param_ae="AB=Hook/BendCompatAdj(mm); AC=BoxQty; AD=Layers",
-            inferred=sb_inf,
+            param_ae="AB=ManualAdj(mm); AC=BoxQty; AD=Layers",
+            inferred=False,
         )
     )
 
@@ -197,14 +184,12 @@ def _build_box_footing_rows(
     ch = max(100.0, float(item.col_l_mm) - 2.0 * ccov)
     hk = max(settings.hook_mult * t_dia, settings.hook_min_mm)
 
-    use_compat_tie_ht = settings.mode == "sample_compat" and mark in ("C2", "C3")
     outer_tie_id = f"{mark}_tie_outer"
     outer_span_expr = (
         "=2*(@SELF:Z-2*$U$2)+2*(@SELF:AA-2*$U$2)"
         "+2*MAX($S$3*@SELF:E,$U$3)-(3*2*@SELF:E)-(3*@SELF:E)"
     )
-    outer_nos_inner = "$Q$4/@SELF:J" if use_compat_tie_ht else "$W$2/@SELF:J"
-    outer_nos_expr = _wrap_roundup(outer_nos_inner, settings.round_up_nos)
+    outer_nos_expr = _wrap_roundup("$W$2/@SELF:J", settings.round_up_nos)
 
     rows.append(
         BbsRow(
@@ -225,11 +210,7 @@ def _build_box_footing_rows(
             param_aa=float(item.col_l_mm),
             param_ac=col_mult,
             param_ad=1.0,
-            param_ae=(
-                "Z=ColB(mm); AA=ColL(mm); Nos uses $Q$4(4500)/J; AC=ColQty"
-                if use_compat_tie_ht
-                else "Z=ColB(mm); AA=ColL(mm); Nos uses $W$2(ColHt)/J; AC=ColQty"
-            ),
+            param_ae="Z=ColB(mm); AA=ColL(mm); Nos uses $W$2(ColHt)/J; AC=ColQty",
         )
     )
 
@@ -290,7 +271,7 @@ def _build_cf1_or_cf2_rows(
     sr_no: int,
     settings: CalcSettings,
 ) -> list[BbsRow]:
-    """Generate mesh, side bar, and shear wall (SW1) rows for CF1 and CF2."""
+    """Generate mesh, side bar, and enclosing shear-wall rows for a lift/core combined footing."""
     rows: list[BbsRow] = []
     mark = item.mark
     cov = settings.footing_cover_mm
@@ -299,88 +280,120 @@ def _build_cf1_or_cf2_rows(
     dia = float(item.long_lower_dia or 12)
     cf_count = float(max(1, item.combined_count))
     depth = float(item.depth_mm)
-    compat = settings.mode == "sample_compat"
 
-    if mark == "CF1":
-        long_span = 5300.0 if compat else float(item.footing_b_mm)
-        short_span = float(item.footing_l_mm or 3866)
-        leg_extra = 20.0 if compat else 0.0
-        eff_off = 12.0 if compat else 0.0  # 2*50 + 12 = 112 in compat, 2*50 in strict
-        leg = depth - 2.0 * cov - leg_extra
-        long_eff = long_span - (2.0 * cov + eff_off)
-        short_eff = short_span - (2.0 * cov + eff_off)
+    b_dim = float(item.footing_b_mm or 0)
+    l_dim = float(item.footing_l_mm or 0)
+    long_span = max(b_dim, l_dim)
+    short_span = min(b_dim, l_dim)
+    leg = max(100.0, depth - 2.0 * cov)
+    long_eff = max(100.0, long_span - 2.0 * cov)
+    short_eff = max(100.0, short_span - 2.0 * cov)
+    nos_expr = _wrap_roundup("((@SELF:AA-2*$S$2-@SELF:E)/@SELF:J)+1", settings.round_up_nos)
+    cut_expr = "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)"
 
-        long_nos_expr = None if compat else _wrap_roundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos)
-        short_nos_expr = None if compat else _wrap_roundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos)
-
-        cf1_long_id = "CF1_long"
-        rows.append(
-            BbsRow(
-                id=cf1_long_id,
-                sr_no=sr_no,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
-                description="CF1 SHAFT (Longer T B)",
-                span_mm=long_span,
-                dia_mm=dia,
-                shape=ShapeSpec(kind="combined_loop", labels={"span": f"{long_eff:g}", "leg": f"{leg:g}"}),
-                spacing_mm=sp,
-                nos_expr=long_nos_expr,
-                nos=26.0 if compat else 0.0,
-                multiple_expr="=@SELF:AC*@SELF:AD",
-                multiple_no=cf_count * 2.0,
-                cut_length_expr="=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
-                if compat
-                else "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
-                param_z=depth,
-                param_aa=short_span,
-                param_ab=leg_extra,
-                param_ac=cf_count,
-                param_ad=2.0,
-                param_ae="Z=Depth; AA=PerpSpan; AB=LegCompatDed; AC=Qty; AD=Layers(2)",
-                inferred=True,
-                source_note="CF1 shaft span 5300 mm includes lift projection beyond 4501 mm schedule width",
-            )
+    cf_long_id = f"{mark}_long"
+    cf_short_id = f"{mark}_short"
+    rows.append(
+        BbsRow(
+            id=cf_long_id,
+            sr_no=sr_no,
+            group_key=mark,
+            bar_mark=mark,
+            description=f"{mark} SHAFT (LONG LOWER)",
+            span_mm=long_span,
+            dia_mm=dia,
+            shape=ShapeSpec(kind="combined_loop", labels={"span": f"{long_eff:g}", "leg": f"{leg:g}"}),
+            spacing_mm=sp,
+            nos_expr=nos_expr,
+            multiple_expr="=@SELF:AC*@SELF:AD",
+            multiple_no=cf_count * 2.0,
+            cut_length_expr=cut_expr,
+            param_z=depth,
+            param_aa=short_span,
+            param_ab=0.0,
+            param_ac=cf_count,
+            param_ad=2.0,
+            param_ae="Z=Depth; AA=PerpSpan; AB=ManualOff(mm); AC=Qty; AD=Layers(2)",
         )
-        rows.append(
-            BbsRow(
-                id="CF1_short",
-                sr_no=None,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
-                description="CF1 SHAFT (Shorter T B)",
-                span_mm=short_span,
-                dia_mm=dia,
-                shape=ShapeSpec(kind="combined_loop", labels={"span": f"{short_eff:g}", "leg": f"{leg:g}"}),
-                spacing_mm=sp,
-                nos_expr=short_nos_expr,
-                nos=36.0 if compat else 0.0,
-                multiple_expr="=@SELF:AC*@SELF:AD",
-                multiple_no=cf_count * 2.0,
-                cut_length_expr="=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
-                if compat
-                else "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
-                param_z=depth,
-                param_aa=long_span,
-                param_ab=leg_extra,
-                param_ac=cf_count,
-                param_ad=2.0,
-                param_ae="Z=Depth; AA=PerpSpan; AB=LegCompatDed; AC=Qty; AD=Layers(2)",
-            )
+    )
+    rows.append(
+        BbsRow(
+            id=cf_short_id,
+            sr_no=None,
+            group_key=mark,
+            bar_mark=mark,
+            description=f"{mark} SHAFT (SHORT UPPER)",
+            span_mm=short_span,
+            dia_mm=dia,
+            shape=ShapeSpec(kind="combined_loop", labels={"span": f"{short_eff:g}", "leg": f"{leg:g}"}),
+            spacing_mm=sp,
+            nos_expr=nos_expr,
+            multiple_expr="=@SELF:AC*@SELF:AD",
+            multiple_no=cf_count * 2.0,
+            cut_length_expr=cut_expr,
+            param_z=depth,
+            param_aa=long_span,
+            param_ab=0.0,
+            param_ac=cf_count,
+            param_ad=2.0,
+            param_ae="Z=Depth; AA=PerpSpan; AB=ManualOff(mm); AC=Qty; AD=Layers(2)",
         )
+    )
+    rows.append(
+        BbsRow(
+            id=f"{mark}_side",
+            sr_no=None,
+            group_key=mark,
+            bar_mark=mark,
+            description="SIDE BARS",
+            span_expr=(
+                f"=2*(@ID:{cf_long_id}:D-2*$S$2)+2*(@ID:{cf_short_id}:D-2*$S$2)"
+                f"+2*MAX($S$3*@SELF:E,$U$3)-(4*@ID:{cf_long_id}:E)+@SELF:AB"
+            ),
+            dia_mm=float(item.side_bars_dia or 10),
+            shape=ShapeSpec(kind="straight", labels={"text": "Along Perimeter"}),
+            nos=float(item.side_bars_nos or 2),
+            multiple_expr="=@SELF:AC*@SELF:AD",
+            multiple_no=cf_count,
+            cut_length_expr="=@SELF:D",
+            param_ab=0.0,
+            param_ac=cf_count,
+            param_ad=1.0,
+            param_ae="Perimeter linked to LONG/SHORT spans + Hook($S$3/$U$3); AC=Qty; AD=Layers",
+        )
+    )
 
-        # Shear wall SW1 on CF1
-        ib = float(item.shaft_inner_b_mm or 2810)
-        il = float(item.shaft_inner_l_mm or 2296)
-        ht_cf1 = settings.shear_wall_ht_cf1_mm
-        sw_cut_est = ht_cf1 - ccov + depth - cov - dia - dia + settings.sw_dowel_mm
-        sw_ef_id = "CF1_sw_ef"
+    if item.shaft_inner_b_mm and item.shaft_inner_l_mm:
+        ib = float(item.shaft_inner_b_mm)
+        il = float(item.shaft_inner_l_mm)
+        ht_ref = "$S$4" if mark == "CF1" else "$U$4"
+        ht_val = settings.shear_wall_ht_cf1_mm if mark == "CF1" else settings.shear_wall_ht_cf2_mm
+        sw_cut_est = (
+            (ht_val - ccov + depth - cov - dia - dia + settings.sw_dowel_mm)
+            if mark == "CF1"
+            else (ht_val + settings.sw_dowel_mm)
+        )
+        sw_cut_expr = (
+            f"={ht_ref}-$U$2+@ID:{cf_long_id}:Z-$S$2-2*@ID:{cf_long_id}:E+$P$3"
+            if mark == "CF1"
+            else f"=$P$3+{ht_ref}"
+        )
+        sw_cut_ae = (
+            f"Z=ShaftB; AA=ShaftL; CutLen={ht_ref}-$U$2+Z-$S$2-2*Dia+$P$3"
+            if mark == "CF1"
+            else f"Z=ShaftB; AA=ShaftL; CutLen=$P$3(Dowel)+{ht_ref}(SW_Ht)"
+        )
+        sw_label = f"{sw_item.mark} {mark}" if sw_item else f"SW {mark}"
+        sw_ef_id = f"{mark}_sw_ef"
+        sw_ec_id = f"{mark}_sw_ec"
+        sw_tie_sp = float(sw_item.ties_spacing if sw_item and sw_item.ties_spacing else sp)
+
         rows.append(
             BbsRow(
                 id=sw_ef_id,
                 sr_no=None,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
+                group_key=mark,
+                bar_mark=sw_label,
                 description="SHEAR WALL E/F",
                 span_expr="=2*(@SELF:Z+@SELF:AA)",
                 dia_mm=10.0,
@@ -388,307 +401,109 @@ def _build_cf1_or_cf2_rows(
                 spacing_mm=sp,
                 nos_expr=_wrap_roundup("@SELF:D/@SELF:J", settings.round_up_nos),
                 multiple_expr="=@SELF:AC*@SELF:AD",
-                multiple_no=2.0,
-                cut_length_expr=f"=$S$4-$U$2+@ID:{cf1_long_id}:Z-$S$2-@ID:{cf1_long_id}:E-@ID:{cf1_long_id}:E+$P$3",
+                multiple_no=cf_count * 2.0,
+                cut_length_expr=sw_cut_expr,
                 param_z=ib,
                 param_aa=il,
-                param_ac=1.0,
+                param_ac=cf_count,
                 param_ad=2.0,
-                param_ae="Z=ShaftB; AA=ShaftL; CutLen uses $S$4,$U$2,CF1 Z,$S$2,CF1 Dia,$P$3",
-                remark=f"upto {ht_cf1:g} ht.",
+                param_ae=sw_cut_ae,
+                remark=f"upto {ht_val:g} ht.",
             )
         )
         ec_nos = float(sw_item.vert_nos if sw_item and sw_item.vert_nos else 4)
+        ec_dia = float(sw_item.vert_dia if sw_item and sw_item.vert_dia else 12)
         rows.append(
             BbsRow(
-                id="CF1_sw_ec",
+                id=sw_ec_id,
                 sr_no=None,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
+                group_key=mark,
+                bar_mark=sw_label,
                 description="SHEAR WALL E/C",
                 span_expr=f"=@ID:{sw_ef_id}:D",
-                dia_mm=12.0,
+                dia_mm=ec_dia,
                 shape=ShapeSpec(kind="l_bar", labels={"ld": f"{settings.sw_dowel_mm:g}", "height": f"{sw_cut_est - settings.sw_dowel_mm:g}"}),
                 nos=ec_nos,
                 multiple_expr="=@SELF:AC*@SELF:AD",
-                multiple_no=4.0,
+                multiple_no=cf_count * 4.0,
                 cut_length_expr=f"=@ID:{sw_ef_id}:N",
-                param_ac=1.0,
+                param_ac=cf_count,
                 param_ad=4.0,
                 param_ae="Span & CutLen linked to SHEAR WALL E/F; AD=4 corners",
             )
         )
+        sw_tie_dia = float(sw_item.ties_dia if sw_item and sw_item.ties_dia else 8)
         rows.append(
             BbsRow(
-                id="CF1_tie_outer",
+                id=f"{mark}_tie_outer",
                 sr_no=None,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
-                description="SHEAR WALL TIES Outer ",
-                span_expr=f"=@ID:{sw_ef_id}:D-($U$2*4)+$U$3+$U$3",
-                dia_mm=8.0,
+                group_key=mark,
+                bar_mark=sw_label,
+                description="SHEAR WALL TIES Outer",
+                span_expr=f"=@ID:{sw_ef_id}:D-(4*$U$2)+2*MAX($S$3*@SELF:E,$U$3)-(3*2*@SELF:E)-(3*@SELF:E)",
+                dia_mm=sw_tie_dia,
                 shape=ShapeSpec(kind="stirrup_rect"),
-                spacing_mm=sp,
-                nos=16.0,
+                spacing_mm=sw_tie_sp,
+                nos_expr=_wrap_roundup(f"{ht_ref}/@SELF:J", settings.round_up_nos),
                 multiple_expr="=@SELF:AC",
-                multiple_no=1.0,
+                multiple_no=cf_count,
                 cut_length_expr="=@SELF:D",
-                param_ac=1.0,
-                param_ae="Perimeter - 4*ColCover($U$2) + 2*MinHook($U$3)",
-                remark="To be verify at site",
+                param_ac=cf_count,
+                param_ae=f"Perimeter - 4*ColCover($U$2) + Hook($S$3/$U$3); Nos={ht_ref}/J",
                 inferred=True,
             )
         )
         rows.append(
             BbsRow(
-                id="CF1_tie_inner",
+                id=f"{mark}_tie_inner",
                 sr_no=None,
-                group_key="CF1",
-                bar_mark="SW1 CF1",
+                group_key=mark,
+                bar_mark=sw_label,
                 description="SHEAR WALL TIES Inner",
-                span_expr="=@PREV:D-(4*$O$4)+$U$3+$U$3",
-                dia_mm=8.0,
+                span_expr="=@PREV:D-(4*$O$4)",
+                dia_mm=sw_tie_dia,
                 shape=ShapeSpec(kind="stirrup_rect"),
-                spacing_mm=sp,
-                nos=16.0,
+                spacing_mm=sw_tie_sp,
+                nos_expr=f"=@ID:{mark}_tie_outer:K",
                 multiple_expr="=@SELF:AC",
-                multiple_no=1.0,
+                multiple_no=cf_count,
                 cut_length_expr="=@SELF:D",
-                param_ac=1.0,
-                param_ae="OuterTie - 4*SWInnerOff($O$4) + 2*MinHook($U$3)",
-                remark="To be verify at site",
+                param_ac=cf_count,
+                param_ae="OuterTie - 4*SWInnerOff($O$4)",
                 inferred=True,
             )
         )
-        return rows
-
-    # CF2
-    long_span = 4300.0 if compat else float(max(item.footing_b_mm, item.footing_l_mm))
-    short_span = float(item.footing_l_mm or 3866)
-    leg = depth - 2.0 * cov
-    long_eff = long_span - 112.0 if compat else (long_span - 2.0 * cov)
-    short_eff = short_span - 112.0 if compat else (short_span - 2.0 * cov)
-
-    cf2_long_id = "CF2_long"
-    cf2_short_id = "CF2_short"
-    rows.append(
-        BbsRow(
-            id=cf2_long_id,
-            sr_no=sr_no,
-            group_key="CF2",
-            bar_mark="CF2",
-            description="CF2 SHAFT (LONG LOWER)",
-            span_mm=long_span,
-            dia_mm=dia,
-            shape=ShapeSpec(kind="combined_loop", labels={"span": f"{long_eff:g}", "leg": f"{leg:g}"}),
-            spacing_mm=sp,
-            nos_expr=None if compat else _wrap_roundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos),
-            nos=26.0 if compat else 0.0,
-            multiple_expr="=@SELF:AC*@SELF:AD",
-            multiple_no=cf_count * 2.0,
-            cut_length_expr="=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
-            if compat
-            else "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
-            param_z=depth,
-            param_aa=short_span,
-            param_ac=cf_count,
-            param_ad=2.0,
-            param_ae="Z=Depth; AA=PerpSpan; AC=Qty; AD=Layers(2)",
-            inferred=True,
-        )
-    )
-    rows.append(
-        BbsRow(
-            id=cf2_short_id,
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="CF2",
-            description="CF2 SHAFT (SHORT UPPER)",
-            span_mm=short_span,
-            dia_mm=dia,
-            shape=ShapeSpec(kind="combined_loop", labels={"span": f"{short_eff:g}", "leg": f"{leg:g}"}),
-            spacing_mm=sp,
-            nos_expr=None if compat else _wrap_roundup("((@SELF:AA-2*$S$2)/@SELF:J)+1", settings.round_up_nos),
-            nos=29.0 if compat else 0.0,
-            multiple_expr="=@SELF:AC*@SELF:AD",
-            multiple_no=cf_count * 2.0,
-            cut_length_expr="=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2-12)-(2*@SELF:E)"
-            if compat
-            else "=2*(@SELF:Z-2*$S$2)+(@SELF:D-2*$S$2)-(2*@SELF:E)",
-            param_z=depth,
-            param_aa=long_span,
-            param_ac=cf_count,
-            param_ad=2.0,
-            param_ae="Z=Depth; AA=PerpSpan; AC=Qty; AD=Layers(2)",
-        )
-    )
-    sb_span_expr = (
-        f"=2*(@ID:{cf2_short_id}:D-2*$S$2-12)+2*(@ID:{cf2_long_id}:D-2*$S$2-12)-(4*@ID:{cf2_long_id}:E)"
-        if compat
-        else f"=2*(@ID:{cf2_short_id}:D-2*$S$2)+2*(@ID:{cf2_long_id}:D-2*$S$2)-(4*@ID:{cf2_long_id}:E)"
-    )
-    rows.append(
-        BbsRow(
-            id="CF2_side",
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="CF2" if not compat else "C6",
-            description="SIDE BARS",
-            span_expr=sb_span_expr,
-            dia_mm=float(item.side_bars_dia or 10),
-            shape=ShapeSpec(kind="straight", labels={"text": "Along Perimeter"}),
-            nos=float(item.side_bars_nos or 2),
-            multiple_expr="=@SELF:AC*@SELF:AD",
-            multiple_no=cf_count * 2.0,
-            cut_length_expr="=@SELF:D",
-            param_ac=cf_count,
-            param_ad=2.0,
-            param_ae="Perimeter linked to CF2 LONG/SHORT spans; AC=Qty; AD=Layers",
-        )
-    )
-
-    ib = float(item.shaft_inner_b_mm or 2300)
-    il = float(item.shaft_inner_l_mm or 2366)
-    cf2_sw_ef_id = "CF2_sw_ef"
-    cf2_sw_ec_id = "CF2_sw_ec"
-    rows.append(
-        BbsRow(
-            id=cf2_sw_ef_id,
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="CF2",
-            description="SHEAR WALL E/F",
-            span_expr="=2*(@SELF:Z+@SELF:AA)",
-            dia_mm=10.0,
-            shape=ShapeSpec(kind="l_bar", labels={"ld": f"{settings.sw_dowel_mm:g}", "height": f"{settings.shear_wall_ht_cf2_mm:g}"}),
-            spacing_mm=sp,
-            nos_expr=_wrap_roundup("@SELF:D/@SELF:J", settings.round_up_nos),
-            multiple_expr="=@SELF:AC*@SELF:AD",
-            multiple_no=2.0,
-            cut_length_expr="=$P$3+$U$4",
-            param_z=ib,
-            param_aa=il,
-            param_ac=1.0,
-            param_ad=2.0,
-            param_ae="Z=ShaftB; AA=ShaftL; CutLen=$P$3(Dowel)+$U$4(CF2Ht)",
-        )
-    )
-    rows.append(
-        BbsRow(
-            id=cf2_sw_ec_id,
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="SW1 CF2" if not compat else "SW1 CF1",
-            description="SHEAR WALL E/C",
-            span_expr=f"=@ID:{cf2_sw_ef_id}:D",
-            dia_mm=12.0,
-            shape=ShapeSpec(kind="l_bar", labels={"ld": f"{settings.sw_dowel_mm:g}", "height": f"{settings.shear_wall_ht_cf2_mm:g}"}),
-            nos=4.0,
-            multiple_expr="=@SELF:AC*@SELF:AD",
-            multiple_no=4.0,
-            cut_length_expr=f"=@ID:{cf2_sw_ef_id}:N",
-            param_ac=1.0,
-            param_ad=4.0,
-            param_ae="Linked to SHEAR WALL E/F; AD=4 corners",
-        )
-    )
-    rows.append(
-        BbsRow(
-            id="CF2_tie_outer",
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="SW1 CF2" if not compat else "SW1 CF1",
-            description="SHEAR WALL TIES Outer ",
-            span_expr=(
-                f"=2*@SELF:Z+2*@SELF:AA+(2*$S$3*@SELF:E)-(3*@SELF:E)"
-                f"-(3*@SELF:E*2)-(4*@ID:{cf2_sw_ec_id}:E)-(4*@SELF:AD)"
-            ),
-            dia_mm=8.0,
-            shape=ShapeSpec(kind="stirrup_rect"),
-            spacing_mm=sp,
-            nos=16.0,
-            multiple_expr="=@SELF:AC",
-            multiple_no=1.0,
-            cut_length_expr="=@SELF:D",
-            param_z=ib,
-            param_aa=il,
-            param_ac=1.0,
-            param_ad=20.0,
-            param_ae="Z=ShaftB; AA=ShaftL; AD=MainVertDia(20)",
-            remark="suite at site",
-            inferred=True,
-        )
-    )
-    rows.append(
-        BbsRow(
-            id="CF2_tie_inner",
-            sr_no=None,
-            group_key="CF2",
-            bar_mark="SW1 CF2" if not compat else "SW1 CF1",
-            description="SHEAR WALL TIES Inner",
-            span_expr="=@PREV:D-(4*$O$4)",
-            dia_mm=8.0,
-            shape=ShapeSpec(kind="stirrup_rect"),
-            spacing_mm=sp,
-            nos=16.0,
-            multiple_expr="=@SELF:AC",
-            multiple_no=1.0,
-            cut_length_expr="=@SELF:D",
-            param_ac=1.0,
-            param_ae="OuterTie - 4*SWInnerOff($O$4)",
-            remark="suite at site",
-            inferred=True,
-        )
-    )
     return rows
 
 
 def _build_cf3_cf4_cf5_rows(
     item: ScheduleFootRow, sr_no: int, settings: CalcSettings
 ) -> list[BbsRow]:
-    """Generate column-formula rows for combined footings CF3 (L-shaped), CF4, and CF5."""
+    """Generate uniform unrounded column-formula rows for polygon and rectangular combined footings."""
     rows: list[BbsRow] = []
     mark = item.mark
     cov = settings.footing_cover_mm
     dia = float(item.long_lower_dia or 12)
     sp = float(item.long_lower_spacing or 125)
     depth = float(item.depth_mm)
-    leg_extra = 15.0  # 750 - 100 - 15 = 635
-    leg = depth - 2.0 * cov - leg_extra
+    leg = max(100.0, depth - 2.0 * cov)
     cf_count = float(max(1, item.combined_count))
     cf_mult = cf_count * 2.0
-    compat = settings.mode == "sample_compat"
+    cut_loop_expr = "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)"
+    nos_inner = "((@SELF:AA-2*$S$2-@SELF:E)/@SELF:J)+1"
 
-    if mark == "CF3":
-        segs = item.l_shape_segments or [
-            {"label": "LONG LOWER 1", "span": 6643, "dist": 2550, "cut_span": 6530},
-            {"label": "LONG LOWER 2", "span": 3500, "dist": 2490, "cut_span": 3385},
-            {"label": "SHORT UPPER 1", "span": 5040, "dist": 3500, "cut_span": 4925},
-            {"label": "SHORT UPPER 2", "span": 2550, "dist": 1959, "cut_span": 2435},
-        ]
+    if item.l_shape_segments:
+        segs = item.l_shape_segments
         for idx, seg in enumerate(segs):
-            fallback_dists = (2550, 2490, 3500, 1959)
             span_v = float(seg["span"])
-            dist_v = float(seg.get("dist", fallback_dists[idx] if idx < 4 else 0))
-            cut_span_v = float(seg["cut_span"])
-            # First 2 legs deduct 1*FootCover; upper 2 deduct 2*FootCover + Dia
-            nos_inner = (
-                "(@SELF:AA-$S$2)/@SELF:J"
-                if idx < 2
-                else "(@SELF:AA-2*$S$2-@SELF:E)/@SELF:J"
-            )
-            span_ded = span_v - cut_span_v  # 113 on seg1, 115 on seg2..4
-            cut_expr = (
-                "=(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-13)+(@SELF:Z-2*$S$2)-(2*@SELF:E)"
-                if idx == 0
-                else "=2*(@SELF:Z-2*$S$2-@SELF:AB)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)"
-            )
+            dist_v = float(seg["dist"])
+            cut_span_v = max(100.0, span_v - 2.0 * cov)
             rows.append(
                 BbsRow(
-                    id=f"CF3_seg_{idx+1}",
+                    id=f"{mark}_seg_{idx+1}",
                     sr_no=sr_no if idx == 0 else None,
-                    group_key="CF3",
-                    bar_mark="CF3",
+                    group_key=mark,
+                    bar_mark=mark,
                     description=str(seg["label"]),
                     span_mm=span_v,
                     dia_mm=dia,
@@ -697,58 +512,55 @@ def _build_cf3_cf4_cf5_rows(
                     nos_expr=_wrap_roundup(nos_inner, settings.round_up_nos),
                     multiple_expr="=@SELF:AD*@SELF:AC",
                     multiple_no=cf_mult,
-                    cut_length_expr=cut_expr,
+                    cut_length_expr=cut_loop_expr,
                     param_z=depth,
                     param_aa=dist_v,
-                    param_ab=span_ded - 2.0 * cov if idx > 0 else leg_extra,
+                    param_ab=0.0,
                     param_ac=cf_count,
                     param_ad=2.0,
-                    param_ae="Z=Depth; AA=DistWidth; AB=CoverExtraOff; AC=CFQty; AD=Layers(2)",
-                    remark="To be confirm at site" if idx == 0 else "",
+                    param_ae="Z=Depth; AA=DistWidth; AB=ManualOff(mm); AC=CFQty; AD=Layers(2)",
                     inferred=True,
                 )
             )
         sb_dia = float(item.side_bars_dia or 10)
         sb_nos = float(item.side_bars_nos or 3)
+        seg1_id = f"{mark}_seg_1"
+        seg_orth_id = f"{mark}_seg_3" if len(segs) >= 3 else f"{mark}_seg_{min(2, len(segs))}"
         rows.append(
             BbsRow(
-                id="CF3_side",
+                id=f"{mark}_side",
                 sr_no=None,
-                group_key="CF3",
-                bar_mark="CF3",
+                group_key=mark,
+                bar_mark=mark,
                 description="SIDE BARS",
-                span_expr="=@ID:CF3_seg_1:D+@ID:CF3_seg_1:AA+719+@ID:CF3_seg_2:AA+@ID:CF3_seg_2:D+2424+@ID:CF3_seg_4:D",
+                span_expr=(
+                    f"=2*(@ID:{seg1_id}:D-2*$S$2)+2*(@ID:{seg_orth_id}:D-2*$S$2)"
+                    f"+2*MAX($S$3*@SELF:E,$U$3)-(4*@ID:{seg1_id}:E)+@SELF:AB"
+                ),
                 dia_mm=sb_dia,
                 shape=ShapeSpec(kind="straight", labels={"text": "Along Perimeter"}),
                 nos=sb_nos,
                 multiple_expr="=@SELF:AC",
                 multiple_no=cf_count,
                 cut_length_expr="=@SELF:D",
+                param_ab=0.0,
                 param_ac=cf_count,
-                param_ae="L-perimeter linked to CF3 segments; AC=CFQty",
+                param_ae="Perimeter linked to outer orthogonal spans + Hook($S$3/$U$3); AC=CFQty",
                 inferred=True,
             )
         )
         return rows
 
-    # Rectangular CF4 / CF5 / additional CF
-    b = float(min(item.footing_b_mm, item.footing_l_mm) or 3100)
-    l = float(max(item.footing_b_mm, item.footing_l_mm) or 6000)
-    eff_extra = 15.0 if compat else 0.0
-    l_eff = l - 2.0 * cov - eff_extra
-    b_eff = b - 2.0 * cov - eff_extra
+    if item.footing_b_mm <= 0 or item.footing_l_mm <= 0:
+        return rows
+
+    b = float(min(item.footing_b_mm, item.footing_l_mm))
+    l = float(max(item.footing_b_mm, item.footing_l_mm))
+    l_eff = max(100.0, l - 2.0 * cov)
+    b_eff = max(100.0, b - 2.0 * cov)
 
     long_id = f"{mark}_long"
     short_id = f"{mark}_short"
-
-    nos_inner = "((@SELF:AA-2*$S$2-@SELF:E)/@SELF:J)+1"
-    cut_long_expr = (
-        "=6635+(@SELF:D-2*$S$2-@SELF:AB)+(@SELF:Z-2*$S$2-@SELF:AB)-(2*@SELF:E)"
-        if (mark == "CF4" and compat)
-        else "=2*(@SELF:Z-2*$S$2-15)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)"
-    )
-    cut_short_expr = "=2*(@SELF:Z-2*$S$2-15)+(@SELF:D-2*$S$2-@SELF:AB)-(2*@SELF:E)"
-
     rows.append(
         BbsRow(
             id=long_id,
@@ -763,15 +575,13 @@ def _build_cf3_cf4_cf5_rows(
             nos_expr=_wrap_roundup(nos_inner, settings.round_up_nos),
             multiple_expr="=@SELF:AD*@SELF:AC",
             multiple_no=cf_mult,
-            cut_length_expr=cut_long_expr,
+            cut_length_expr=cut_loop_expr,
             param_z=depth,
             param_aa=b,
-            param_ab=eff_extra,
+            param_ab=0.0,
             param_ac=cf_count,
             param_ad=2.0,
-            param_ae="Z=Depth; AA=PerpB; AB=CompatSpanOff; AC=CFQty; AD=Layers(2)",
-            remark="Plus One" if mark == "CF4" else "",
-            inferred=(mark == "CF4" and compat),
+            param_ae="Z=Depth; AA=PerpB; AB=ManualOff(mm); AC=CFQty; AD=Layers(2)",
         )
     )
     rows.append(
@@ -788,29 +598,22 @@ def _build_cf3_cf4_cf5_rows(
             nos_expr=_wrap_roundup(nos_inner, settings.round_up_nos),
             multiple_expr="=@SELF:AD*@SELF:AC",
             multiple_no=cf_mult,
-            cut_length_expr=cut_short_expr,
+            cut_length_expr=cut_loop_expr,
             param_z=depth,
             param_aa=l,
-            param_ab=eff_extra,
+            param_ab=0.0,
             param_ac=cf_count,
             param_ad=2.0,
-            param_ae="Z=Depth; AA=PerpL; AB=CompatSpanOff; AC=CFQty; AD=Layers(2)",
-            remark="Plus one" if mark == "CF4" else "",
+            param_ae="Z=Depth; AA=PerpL; AB=ManualOff(mm); AC=CFQty; AD=Layers(2)",
         )
     )
 
     sb_dia = float(item.side_bars_dia or 10)
     sb_nos = float(item.side_bars_nos or 3)
-    perim_expr = (
-        f"2*(@ID:{long_id}:D-2*$S$2-@ID:{long_id}:AB)+2*(@ID:{short_id}:D-2*$S$2-@ID:{short_id}:AB)"
+    sb_span_expr = (
+        f"=2*(@ID:{long_id}:D-2*$S$2)+2*(@ID:{short_id}:D-2*$S$2)"
+        f"+2*MAX($S$3*@SELF:E,$U$3)-(4*@ID:{long_id}:E)+@SELF:AB"
     )
-    if mark == "CF4" and compat:
-        sb_span_expr = f"={perim_expr}+(2*$S$3*@SELF:AB)-(4*@ID:{long_id}:E)-(3*@SELF:AB)-(3*@SELF:AB*2)"
-        sb_ab = 8.0
-    else:
-        sb_span_expr = f"={perim_expr}+$U$3+$U$3"
-        sb_ab = 0.0
-
     rows.append(
         BbsRow(
             id=f"{mark}_side",
@@ -825,10 +628,9 @@ def _build_cf3_cf4_cf5_rows(
             multiple_expr="=@SELF:AC",
             multiple_no=cf_count,
             cut_length_expr="=@SELF:D",
-            param_ab=sb_ab,
+            param_ab=0.0,
             param_ac=cf_count,
             param_ae="Perimeter linked to LONG/SHORT spans + Hook($S$3/$U$3); AC=CFQty",
-            remark="Suite at Site" if mark == "CF5" else "",
         )
     )
     return rows
@@ -849,7 +651,7 @@ def generate_bbs_rows(
             rows.extend(_build_box_footing_rows(item, sr_counter, settings))
             sr_counter += 1
         elif item.kind == "combined_footing":
-            if item.mark in ("CF1", "CF2"):
+            if item.shaft_inner_b_mm and item.shaft_inner_l_mm:
                 rows.extend(_build_cf1_or_cf2_rows(item, sw_item, sr_counter, settings))
             else:
                 rows.extend(_build_cf3_cf4_cf5_rows(item, sr_counter, settings))
@@ -859,7 +661,7 @@ def generate_bbs_rows(
         rows.append(
             BbsRow(
                 id="chairs_wastage",
-                sr_no=sr_counter + 1 if sr_counter == 12 else sr_counter,
+                sr_no=sr_counter,
                 group_key="CHAIRS",
                 bar_mark="",
                 description="Chairs (from Wastage bars)",
@@ -867,17 +669,22 @@ def generate_bbs_rows(
                 dia_mm=12.0,
                 shape=ShapeSpec(kind="chair", labels={}),
                 nos=0.0,
-                multiple_no=0.0,
+                multiple_expr="=@SELF:AC*@SELF:AD",
+                multiple_no=1.0,
                 total_nos=0.0,
-                cut_length_mm=500.0,
+                cut_length_expr="=@SELF:D",
+                cut_length_mm=0.0,
                 weight_kg=0.0,
+                param_ac=1.0,
+                param_ad=1.0,
+                param_ae="Enter Span(D) & Nos(K) to compute via formula",
                 remark="Suite at Site",
             )
         )
         rows.append(
             BbsRow(
                 id="spacers_wastage",
-                sr_no=(sr_counter + 2 if sr_counter == 12 else sr_counter + 1),
+                sr_no=sr_counter + 1,
                 group_key="SPACERS",
                 bar_mark="",
                 description="Spacers (from Wastage bars)",
@@ -885,10 +692,15 @@ def generate_bbs_rows(
                 dia_mm=10.0,
                 shape=ShapeSpec(kind="straight", labels={}),
                 nos=0.0,
-                multiple_no=0.0,
+                multiple_expr="=@SELF:AC*@SELF:AD",
+                multiple_no=1.0,
                 total_nos=0.0,
-                cut_length_mm=200.0,
+                cut_length_expr="=@SELF:D",
+                cut_length_mm=0.0,
                 weight_kg=0.0,
+                param_ac=1.0,
+                param_ad=1.0,
+                param_ae="Enter Span(D) & Nos(K) to compute via formula",
                 remark="Suite at Site",
             )
         )

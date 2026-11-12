@@ -1,7 +1,7 @@
 """Data models for parsed CAD schedules, BBS calculation settings, and workbook rows."""
 
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 DIAMETER_COLUMNS: tuple[int, ...] = (8, 10, 12, 16, 20, 25, 32, 36, 40)
 
@@ -96,7 +96,7 @@ class BbsRow(BaseModel):
 class CalcSettings(BaseModel):
     """Calculation rules and engineering constants controlling BBS generation."""
 
-    mode: Literal["sample_compat", "strict_geometry"] = "sample_compat"
+    mode: Literal["strict_geometry"] = "strict_geometry"
     round_up_nos: bool = False
     footing_cover_mm: float = 50.0
     column_cover_mm: float = 40.0
@@ -110,10 +110,15 @@ class CalcSettings(BaseModel):
     shear_wall_ht_cf2_mm: float = 3000.0
     sw_dowel_mm: float = 300.0
     sw_inner_offset_mm: float = 80.0
-    compat_tie_ht_mm: float = 4500.0
     tie_step_div_ge16: float = 6.0
     tie_step_div_lt16: float = 5.0
     include_chairs_spacers: bool = True
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _enforce_strict_geometry(cls, _v: object) -> str:
+        """Enforce uniform unrounded geometry across all designs (zero legacy shims)."""
+        return "strict_geometry"
 
 
 class BbsDocument(BaseModel):

@@ -831,8 +831,7 @@
 
       <div class="toolbar">
         <select id="uploadMode" title="Calculation Rule Engine">
-          <option value="sample_compat" selected>Sample-Compatible Rules</option>
-          <option value="strict_geometry">Strict Uniform Geometry</option>
+          <option value="strict_geometry" selected>Strict Uniform Geometry (No Roundoff)</option>
         </select>
         <label class="check-pill">
           <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
@@ -894,8 +893,7 @@
         <div class="field">
           <label for="setMode">Rule Mode</label>
           <select id="setMode" class="const-input">
-            <option value="sample_compat">Sample-Compatible</option>
-            <option value="strict_geometry">Strict Geometry</option>
+            <option value="strict_geometry" selected>Strict Uniform Geometry</option>
           </select>
         </div>
         <div class="field">
@@ -908,7 +906,7 @@
       </div>
 
       <details class="const-drawer">
-        <summary>▸ All Sheet Constants ($P$3, $O$4, $Q$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
+        <summary>▸ All Sheet Constants ($P$3, $O$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
         <div class="settings-bar">
           <div class="field">
             <label for="setLdVert">Vert. Ld ($Y$2 mm)</label>
@@ -937,10 +935,6 @@
           <div class="field">
             <label for="setSwOff">SW Inner Off ($O$4)</label>
             <input type="number" step="any" id="setSwOff" class="const-input" />
-          </div>
-          <div class="field">
-            <label for="setCompatHt">Compat Tie Ht ($Q$4)</label>
-            <input type="number" step="any" id="setCompatHt" class="const-input" />
           </div>
           <div class="field">
             <label for="setCf1Ht">CF1 SW Ht ($S$4 mm)</label>
@@ -1074,7 +1068,6 @@ const GLOBAL_CONST_CELLS = {
   "$W$3": ["unit_wt_divisor", "Unit Wt Div"],
   "$Y$3": ["scale_divisor", "Kg/MT Scale"],
   "$O$4": ["sw_inner_offset_mm", "SW Inner Off"],
-  "$Q$4": ["compat_tie_ht_mm", "Tie Compat Ht"],
   "$S$4": ["shear_wall_ht_cf1_mm", "CF1 SW Ht"],
   "$U$4": ["shear_wall_ht_cf2_mm", "CF2 SW Ht"],
   "$W$4": ["tie_step_div_ge16", "Tie Div (>=16)"],
@@ -1479,7 +1472,6 @@ function renderDocument(doc, previewUrl) {
   $("setScaleDiv").value = fmt(s.scale_divisor ?? 1000);
   $("setSwDowel").value = fmt(s.sw_dowel_mm ?? 300);
   $("setSwOff").value = fmt(s.sw_inner_offset_mm ?? 80);
-  $("setCompatHt").value = fmt(s.compat_tie_ht_mm ?? 4500);
   $("setCf1Ht").value = fmt(s.shear_wall_ht_cf1_mm);
   $("setCf2Ht").value = fmt(s.shear_wall_ht_cf2_mm);
   $("setTieDiv16").value = fmt(s.tie_step_div_ge16 ?? 6);
@@ -1587,12 +1579,11 @@ function syncMetaFields() {
   s.scale_divisor = numInputOrDefault("setScaleDiv", 1000);
   s.sw_dowel_mm = numInputOrDefault("setSwDowel", 300);
   s.sw_inner_offset_mm = numInputOrDefault("setSwOff", 80);
-  s.compat_tie_ht_mm = numInputOrDefault("setCompatHt", 4500);
   s.shear_wall_ht_cf1_mm = numInputOrDefault("setCf1Ht", 1650);
   s.shear_wall_ht_cf2_mm = numInputOrDefault("setCf2Ht", 3000);
   s.tie_step_div_ge16 = numInputOrDefault("setTieDiv16", 6);
   s.tie_step_div_lt16 = numInputOrDefault("setTieDivLt16", 5);
-  s.mode = $("setMode").value;
+  s.mode = "strict_geometry";
   s.round_up_nos = $("setRoundUp").value === "true";
 }
 
@@ -1675,7 +1666,6 @@ function buildBlankStarterDoc() {
       shear_wall_ht_cf2_mm: 3000,
       sw_dowel_mm: 300,
       sw_inner_offset_mm: 80,
-      compat_tie_ht_mm: 4500,
       tie_step_div_ge16: 6,
       tie_step_div_lt16: 5,
       include_chairs_spacers: true,

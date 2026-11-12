@@ -24,7 +24,6 @@ GLOBAL_CONST_CELLS: dict[str, tuple[str, str]] = {
     "$W$3": ("unit_wt_divisor", "Unit Wt Div"),
     "$Y$3": ("scale_divisor", "Kg/MT Scale"),
     "$O$4": ("sw_inner_offset_mm", "SW Inner Off"),
-    "$Q$4": ("compat_tie_ht_mm", "Tie Compat Ht"),
     "$S$4": ("shear_wall_ht_cf1_mm", "CF1 SW Ht"),
     "$U$4": ("shear_wall_ht_cf2_mm", "CF2 SW Ht"),
     "$W$4": ("tie_step_div_ge16", "Tie Div (>=16)"),

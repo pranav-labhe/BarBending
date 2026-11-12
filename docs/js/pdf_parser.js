@@ -480,9 +480,12 @@
     const stack = [];
     let ctm = [...vp.transform];
     let lineWidth = 1.0;
+    let isDashed = false;
 
     const planRects = [];
+    const nestedRects = [];
     const strokeSegs = [];
+    const solidOrthoSegs = [];
 
     const STROKE_OPS = new Set([
       OPS.stroke,
@@ -506,25 +509,29 @@
       const args = ops.argsArray[i];
 
       if (fn === OPS.save) {
-        stack.push({ ctm: [...ctm], lineWidth });
+        stack.push({ ctm: [...ctm], lineWidth, isDashed });
       } else if (fn === OPS.restore) {
         if (stack.length) {
           const st = stack.pop();
           ctm = st.ctm;
           lineWidth = st.lineWidth;
+          isDashed = Boolean(st.isDashed);
         }
       } else if (fn === OPS.transform) {
         ctm = pdfjsLib.Util.transform(ctm, args);
       } else if (fn === OPS.setLineWidth) {
         lineWidth = args[0];
+      } else if (fn === OPS.setDash) {
+        isDashed = Array.isArray(args && args[0]) && args[0].length > 0;
       } else if (fn === OPS.paintFormXObjectBegin) {
-        stack.push({ ctm: [...ctm], lineWidth });
+        stack.push({ ctm: [...ctm], lineWidth, isDashed });
         if (args && args[0]) ctm = pdfjsLib.Util.transform(ctm, args[0]);
       } else if (fn === OPS.paintFormXObjectEnd) {
         if (stack.length) {
           const st = stack.pop();
           ctm = st.ctm;
           lineWidth = st.lineWidth;
+          isDashed = Boolean(st.isDashed);
         }
       } else if (fn === OPS.constructPath) {
         const nextFn = ops.fnArray[i + 1];
@@ -607,18 +614,178 @@
         };
         if (!rectContainsRect(planBox, r)) continue;
 
-        if (r.width > 35 && r.width < 320 && r.height > 35 && r.height < 320 && subOps.length <= 5) {
-          planRects.push(r);
+        if (subOps.length <= 5) {
+          if (r.width > 18 && r.width < 320 && r.height > 18 && r.height < 320) nestedRects.push(r);
+          if (r.width > 35 && r.width < 320 && r.height > 35 && r.height < 320) planRects.push(r);
         }
 
         const scaledW = lineWidth * Math.hypot(ctm[0], ctm[1]);
         if (scaledW >= 0.45 && !(r.width > 500 && r.height > 500)) {
           strokeSegs.push(...localSegs);
         }
+        if (!isDashed) {
+          for (const sg of localSegs) {
+            const dx = Math.abs(sg[2] - sg[0]);
+            const dy = Math.abs(sg[3] - sg[1]);
+            const span = Math.max(dx, dy);
+            if (span >= 12.0 && Math.min(dx, dy) <= 1.0 && span < 350.0) {
+              solidOrthoSegs.push(sg);
+            }
+          }
+        }
       }
     }
 
-    return { planRects, strokeSegs };
+    return { planRects, nestedRects, strokeSegs, solidOrthoSegs };
+  }
+
+  function extractNestedShaftDims(cfr, nestedRects, planTokens, planScale) {
+    if (planScale <= 0) return null;
+    const innerCands = nestedRects.filter(
+      (r) =>
+        rectContainsRect({ x0: cfr.x0 - 2, y0: cfr.y0 - 2, x1: cfr.x1 + 2, y1: cfr.y1 + 2 }, r) &&
+        r.width >= 0.3 * cfr.width &&
+        r.width <= 0.9 * cfr.width &&
+        r.height >= 0.3 * cfr.height &&
+        r.height <= 0.9 * cfr.height
+    );
+    if (!innerCands.length) return null;
+    const outerSw = innerCands.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
+    const rawW = outerSw.width / planScale;
+    const rawH = outerSw.height / planScale;
+
+    const exp = { x0: cfr.x0 - 20, y0: cfr.y0 - 20, x1: cfr.x1 + 20, y1: cfr.y1 + 20 };
+    const hCands = [];
+    const vCands = [];
+    for (const t of planTokens) {
+      if (!rectContains(exp, t.cx, t.cy) || !/^\d+$/.test(t.text)) continue;
+      const val = parseFloat(t.text);
+      const oriH = (t.x1 - t.x0) >= (t.y1 - t.y0);
+      if (oriH && val >= 0.75 * rawW && val <= 1.06 * rawW) hCands.push(val);
+      else if (!oriH && val >= 0.75 * rawH && val <= 1.06 * rawH) vCands.push(val);
+    }
+
+    const pickClosest = (arr, target) =>
+      arr.length ? arr.reduce((a, b) => (Math.abs(a - target) < Math.abs(b - target) ? a : b)) : Math.round(target);
+    return [pickClosest(hCands, rawW), pickClosest(vCands, rawH)];
+  }
+
+  function extractPolygonCfSegments(ct, solidOrthoSegs, planBox, planTokens, planScale) {
+    if (planScale <= 0) return [];
+    const localSegs = solidOrthoSegs.filter((sg) => {
+      const mx = (sg[0] + sg[2]) * 0.5;
+      const my = (sg[1] + sg[3]) * 0.5;
+      return Math.abs(mx - ct.cx) < 120.0 && Math.abs(my - ct.cy) < 120.0;
+    });
+    if (localSegs.length < 4) return [];
+
+    const snapKey = (x, y) => `${Math.round(x * 2) / 2},${Math.round(y * 2) / 2}`;
+    const adj = new Map();
+    const edgeCoords = new Map();
+    for (const [x1, y1, x2, y2] of localSegs) {
+      const a = snapKey(x1, y1);
+      const b = snapKey(x2, y2);
+      if (a === b) continue;
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      if (!adj.get(a).includes(b)) adj.get(a).push(b);
+      if (!adj.get(b).includes(a)) adj.get(b).push(a);
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      edgeCoords.set(key, [x1, y1, x2, y2, a, b]);
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const k of Array.from(adj.keys())) {
+        if (adj.get(k).length < 2) {
+          for (const nb of adj.get(k)) {
+            if (adj.has(nb)) adj.set(nb, adj.get(nb).filter((x) => x !== k));
+          }
+          adj.delete(k);
+          changed = true;
+        }
+      }
+    }
+    if (adj.size < 4) return [];
+
+    const visited = new Set();
+    let bestComp = null;
+    for (const start of adj.keys()) {
+      if (visited.has(start)) continue;
+      const comp = [];
+      const stack = [start];
+      visited.add(start);
+      while (stack.length) {
+        const cur = stack.pop();
+        comp.push(cur);
+        for (const nb of adj.get(cur) || []) {
+          if (!visited.has(nb)) {
+            visited.add(nb);
+            stack.push(nb);
+          }
+        }
+      }
+      if (comp.length >= 4) {
+        const pts = comp.map((s) => s.split(",").map(Number));
+        const xsC = pts.map((p) => p[0]);
+        const ysC = pts.map((p) => p[1]);
+        if (Math.min(...xsC) - 4 <= ct.cx && ct.cx <= Math.max(...xsC) + 4 && Math.min(...ysC) - 4 <= ct.cy && ct.cy <= Math.max(...ysC) + 4) {
+          bestComp = new Set(comp);
+          break;
+        }
+      }
+    }
+    if (!bestComp) return [];
+
+    const hEdges = [];
+    const vEdges = [];
+    const xsB = [];
+    const ysB = [];
+    for (const [x1, y1, x2, y2, a, b] of edgeCoords.values()) {
+      if (bestComp.has(a) && bestComp.has(b)) {
+        xsB.push(x1, x2);
+        ysB.push(y1, y2);
+        const dx = Math.abs(x2 - x1);
+        const dy = Math.abs(y2 - y1);
+        const lenPt = Math.max(dx, dy);
+        if (dx >= dy) hEdges.push([(y1 + y2) * 0.5, lenPt]);
+        else vEdges.push([(x1 + x2) * 0.5, lenPt]);
+      }
+    }
+    if (!hEdges.length || !vEdges.length) return [];
+
+    const bx0 = Math.min(...xsB), bx1 = Math.max(...xsB);
+    const by0 = Math.min(...ysB), by1 = Math.max(...ysB);
+    const wFullMm = (bx1 - bx0) / planScale;
+    const hFullMm = (by1 - by0) / planScale;
+
+    const localNumToks = planTokens
+      .filter((t) => t.cx >= bx0 - 25 && t.cx <= bx1 + 25 && t.cy >= by0 - 25 && t.cy <= by1 + 25 && /^\d+$/.test(t.text))
+      .map((t) => parseFloat(t.text));
+    const snapDim = (rawMm) => {
+      for (const val of localNumToks) {
+        if (rawMm > 0 && Math.abs(val - rawMm) / rawMm <= 0.015) return val;
+      }
+      return Math.round(rawMm);
+    };
+
+    const hLengths = hEdges.map((e) => e[1] / planScale).sort((a, b) => b - a);
+    const vLengths = vEdges.map((e) => e[1] / planScale).sort((a, b) => b - a);
+    const wLong = snapDim(hLengths.length ? hLengths[0] : wFullMm);
+    const wShort = hLengths.length > 1 ? snapDim(hLengths[1]) : wLong;
+    const hFull = snapDim(hFullMm);
+    const outerV = vEdges.filter((e) => Math.abs(e[0] - bx0) < 3 || Math.abs(e[0] - bx1) < 3).map((e) => e[1] / planScale);
+    const hWide = outerV.length ? snapDim(Math.min(...outerV)) : snapDim(vLengths[vLengths.length - 1]);
+    const hNarrow = Math.max(100, Math.round(hFull - hWide));
+    const wWings = Math.max(100, Math.round(wLong - wShort));
+
+    return [
+      { label: "LONG LOWER 1", span: wLong, dist: hWide },
+      { label: "LONG LOWER 2", span: wShort, dist: hNarrow },
+      { label: "SHORT UPPER 1", span: hFull, dist: wShort },
+      { label: "SHORT UPPER 2", span: hWide, dist: wWings },
+    ];
   }
 
   function binaryCloseGrid(src, w, h, radius = 3) {
@@ -725,7 +892,7 @@
       cfCounts[k] = (cfCounts[k] || 0) + 1;
     }
 
-    const { planRects, strokeSegs } = extractPlanVectorGeometry(ops, vp, planBox);
+    const { planRects, nestedRects, strokeSegs, solidOrthoSegs } = extractPlanVectorGeometry(ops, vp, planBox);
     const schedByMark = {};
     for (const r of schedule) schedByMark[r.mark] = r;
 
@@ -843,33 +1010,19 @@
 
     const cfLiftDims = {};
     for (const [cfName, cfr] of cfRectRegions) {
-      if (cfName === "CF1" || cfName === "CF2") {
-        const nums = planTokens
-          .filter(
-            (t) =>
-              rectContains(cfr, t.cx, t.cy, 15) &&
-              /^\d+$/.test(t.text) &&
-              parseInt(t.text, 10) >= 1800 &&
-              parseInt(t.text, 10) <= 3200
-          )
-          .map((t) => parseInt(t.text, 10));
-        if (cfName === "CF1" && nums.includes(2810) && nums.includes(2296)) {
-          cfLiftDims.CF1 = [2810, 2296];
-        } else if (cfName === "CF2") {
-          cfLiftDims.CF2 = [2300, 2366];
-        }
+      if (!(cfName in cfLiftDims)) {
+        const dims = extractNestedShaftDims(cfr, nestedRects, planTokens, planScale);
+        if (dims) cfLiftDims[cfName] = dims;
       }
     }
 
-    const cf3Tokens = planTokens.filter((t) =>
-      ["4213", "4214", "2490", "3500", "2550", "1240", "719"].includes(t.text)
-    );
-    const cf3Segments = [
-      { label: "LONG LOWER 1", span: 6643, dist: 2550, cut_span: 6530, dist_formula: "(2550-50)/125", cut_formula: "635+6530+650-(2*12)" },
-      { label: "LONG LOWER 2", span: 3500, dist: 2490, cut_span: 3385, dist_formula: "(2490-50)/125", cut_formula: "635+3385+635-(2*12)" },
-      { label: "SHORT UPPER 1", span: 5040, dist: 3500, cut_span: 4925, dist_formula: "(3500-12-100)/125", cut_formula: "635+4925+635-(2*12)" },
-      { label: "SHORT UPPER 2", span: 2550, dist: 1959, cut_span: 2435, dist_formula: "(1240+719-100-12)/125", cut_formula: "635+2435+635-(2*12)" },
-    ];
+    const cfPolySegments = {};
+    for (const ct of missingCfTags) {
+      const cname = ct.text.toUpperCase();
+      if (cname in cfPolySegments) continue;
+      const segs = extractPolygonCfSegments(ct, solidOrthoSegs, planBox, planTokens, planScale);
+      if (segs.length) cfPolySegments[cname] = segs;
+    }
 
     for (const row of schedule) {
       if (row.kind === "box_footing") {
@@ -878,14 +1031,13 @@
       } else if (row.kind === "combined_footing") {
         row.combined_count = cfCounts[row.mark] || 1;
         if (cfLiftDims[row.mark]) {
-          row.shaft_inner_b_mm = cfLiftDims[row.mark][0];
-          row.shaft_inner_l_mm = cfLiftDims[row.mark][1];
+          row.shaft_inner_b_mm = Math.round(cfLiftDims[row.mark][0]);
+          row.shaft_inner_l_mm = Math.round(cfLiftDims[row.mark][1]);
         }
-        if (row.mark === "CF3") {
-          row.l_shape_segments = cf3Segments;
-          if (!cf3Tokens.length) {
-            warnings.push("CF3 L-shaped segments could not be directly verified on plan; review CF3 dimensions.");
-          }
+        if (cfPolySegments[row.mark]) {
+          row.l_shape_segments = cfPolySegments[row.mark];
+        } else if (row.footing_b_mm === 0 && row.footing_l_mm === 0) {
+          warnings.push(`Non-rectangular combined footing ${row.mark} contour could not be isolated cleanly on plan; review segment spans.`);
         }
       } else if (row.kind === "shear_wall") {
         row.combined_count = 1;

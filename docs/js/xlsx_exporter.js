@@ -326,7 +326,7 @@
 
     const r2Const = { 18: ["Foot Cover", st.footing_cover_mm], 20: ["Col Cover", st.column_cover_mm], 22: ["Col Height", st.column_height_mm], 24: ["Vert. Ld", st.ld_vertical_mm] };
     const r3Const = { 15: ["SW Dowel", st.sw_dowel_mm], 18: ["Hook Mult", st.hook_mult], 20: ["Min Hook", st.hook_min_mm], 22: ["Unit Wt Div", st.unit_wt_divisor], 24: ["Kg/MT Scale", st.scale_divisor] };
-    const r4Const = { 14: ["SW Inner Off", st.sw_inner_offset_mm], 16: ["Tie Compat Ht", st.compat_tie_ht_mm], 18: ["CF1 SW Ht", st.shear_wall_ht_cf1_mm], 20: ["CF2 SW Ht", st.shear_wall_ht_cf2_mm], 22: ["Tie Div (>=16)", st.tie_step_div_ge16], 24: ["Tie Div (<16)", st.tie_step_div_lt16] };
+    const r4Const = { 14: ["SW Inner Off", st.sw_inner_offset_mm], 18: ["CF1 SW Ht", st.shear_wall_ht_cf1_mm], 20: ["CF2 SW Ht", st.shear_wall_ht_cf2_mm], 22: ["Tie Div (>=16)", st.tie_step_div_ge16], 24: ["Tie Div (<16)", st.tie_step_div_lt16] };
 
     function pushConstCells(rIdx, cs, map) {
       for (let c = 1; c <= 25; c++) {
@@ -472,8 +472,7 @@
       const infStyle = row.inferred ? 10 : 6;
       const spanRes = BbsCalculator.resolveRowFormula(row.span_expr, idx, doc.rows, st, firstTieR);
       if (spanRes) cs.push(cellFormula(`D${curRow}`, spanRes.excelFormula, row.span_mm, infStyle));
-      else if (row.span_mm > 0) cs.push(cellNum(`D${curRow}`, row.span_mm, infStyle));
-      else cs.push(cellStr(`D${curRow}`, "", infStyle));
+      else cs.push(cellNum(`D${curRow}`, row.span_mm || 0, infStyle));
 
       cs.push(cellNum(`E${curRow}`, row.dia_mm, 6));
       for (let c = 6; c <= 9; c++) cs.push(cellStr(`${colLetter(c)}${curRow}`, "", 6));
@@ -484,40 +483,30 @@
         cs.push(cellStr(`J${curRow}`, "", 6));
       }
 
-      const isSpecialEmpty = ["CHAIRS", "SPACERS"].includes(row.group_key) && Number(row.nos) === 0;
       const nosRes = BbsCalculator.resolveRowFormula(row.nos_expr, idx, doc.rows, st, firstTieR);
       if (nosRes) cs.push(cellFormula(`K${curRow}`, nosRes.excelFormula, row.nos, infStyle));
-      else if (!isSpecialEmpty) cs.push(cellNum(`K${curRow}`, row.nos, infStyle));
-      else cs.push(cellStr(`K${curRow}`, "", infStyle));
+      else cs.push(cellNum(`K${curRow}`, row.nos || 0, infStyle));
 
       const multRes = BbsCalculator.resolveRowFormula(row.multiple_expr, idx, doc.rows, st, firstTieR);
       if (multRes) cs.push(cellFormula(`L${curRow}`, multRes.excelFormula, row.multiple_no, infStyle));
-      else if (!isSpecialEmpty) cs.push(cellNum(`L${curRow}`, row.multiple_no, infStyle));
-      else cs.push(cellStr(`L${curRow}`, "", infStyle));
+      else cs.push(cellNum(`L${curRow}`, row.multiple_no || 0, infStyle));
 
-      if (!isSpecialEmpty) cs.push(cellFormula(`M${curRow}`, `+L${curRow}*K${curRow}`, row.total_nos, 9));
-      else cs.push(cellStr(`M${curRow}`, "", 9));
+      cs.push(cellFormula(`M${curRow}`, `+L${curRow}*K${curRow}`, row.total_nos, 9));
 
       const cutStyle = row.inferred ? 10 : 9;
       const cutRes = BbsCalculator.resolveRowFormula(row.cut_length_expr, idx, doc.rows, st, firstTieR);
       if (cutRes) cs.push(cellFormula(`N${curRow}`, cutRes.excelFormula, row.cut_length_mm, cutStyle));
-      else cs.push(cellNum(`N${curRow}`, row.cut_length_mm, cutStyle));
+      else cs.push(cellNum(`N${curRow}`, row.cut_length_mm || 0, cutStyle));
 
-      if (!isSpecialEmpty) cs.push(cellNum(`O${curRow}`, row.coupler || 0, 6));
-      else cs.push(cellStr(`O${curRow}`, "", 6));
+      cs.push(cellNum(`O${curRow}`, row.coupler || 0, 6));
 
       for (let dIdx = 0; dIdx < DIAMETER_COLUMNS.length; dIdx++) {
         const colC = 16 + dIdx;
         const letCol = colLetter(colC);
         const ref = `${letCol}${curRow}`;
         const cached = Math.abs(DIAMETER_COLUMNS[dIdx] - Number(row.dia_mm)) < 1e-9 ? row.weight_kg : 0;
-        if (isSpecialEmpty) {
-          if (cached > 0) cs.push(cellNum(ref, cached, 9));
-          else cs.push(cellStr(ref, "", 9));
-        } else {
-          const f = `IF($E${curRow}=${letCol}$6,$M${curRow},0)*($N${curRow}*$E${curRow}*$E${curRow}/($W$3*$Y$3))`;
-          cs.push(cellFormula(ref, f, cached, 9));
-        }
+        const f = `IF($E${curRow}=${letCol}$6,$M${curRow},0)*($N${curRow}*$E${curRow}*$E${curRow}/($W$3*$Y$3))`;
+        cs.push(cellFormula(ref, f, cached, 9));
       }
 
       cs.push(cellStr(`Y${curRow}`, row.remark || "", 7));

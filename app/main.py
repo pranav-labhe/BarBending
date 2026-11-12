@@ -43,7 +43,7 @@ def index() -> HTMLResponse:
 @app.post("/api/parse")
 async def parse_pdf_endpoint(
     file: UploadFile = File(...),
-    mode: Literal["sample_compat", "strict_geometry"] = Form("sample_compat"),
+    mode: str = Form("strict_geometry"),
     round_up_nos: bool = Form(False),
 ) -> dict[str, object]:
     """Parse an uploaded CAD structural PDF into a calculated BbsDocument + preview image."""

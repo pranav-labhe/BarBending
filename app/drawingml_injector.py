@@ -305,9 +305,11 @@ def _build_shape_anchors(id_gen: _IdGen, excel_row: int, spec: ShapeSpec) -> lis
 
 
 def inject_drawingml_shapes(
-    xlsx_bytes: bytes, row_shapes: Iterable[tuple[int, ShapeSpec]]
+    xlsx_bytes: bytes,
+    row_shapes: Iterable[tuple[int, ShapeSpec]],
+    cached_values: dict[str, tuple[float | str, bool]] | None = None,
 ) -> bytes:
-    """Inject xl/drawings/drawing1.xml native vector shapes into an openpyxl-built workbook."""
+    """Inject xl/drawings/drawing1.xml shapes and cached <v> formula values into workbook XML."""
     ET.register_namespace("xdr", XDR_NS)
     ET.register_namespace("a", A_NS)
     ET.register_namespace("r", R_NS)
@@ -349,6 +351,29 @@ def inject_drawingml_shapes(
                 ET.register_namespace("", MAIN_NS)
                 ET.register_namespace("r", R_NS)
                 s_root = ET.fromstring(data)
+                if cached_values:
+                    for c_el in s_root.findall(f".//{{{MAIN_NS}}}c"):
+                        ref = c_el.attrib.get("r")
+                        if ref not in cached_values:
+                            continue
+                        val, is_str = cached_values[ref]
+                        if is_str:
+                            c_el.attrib["t"] = "str"
+                        elif "t" in c_el.attrib and c_el.attrib["t"] != "n":
+                            del c_el.attrib["t"]
+                        v_el = c_el.find(f"{{{MAIN_NS}}}v")
+                        if v_el is None:
+                            v_el = ET.SubElement(c_el, f"{{{MAIN_NS}}}v")
+                        if is_str:
+                            v_el.text = str(val)
+                        else:
+                            fval = float(val)
+                            if fval == 0:
+                                v_el.text = "0"
+                            elif abs(fval - round(fval)) < 1e-12:
+                                v_el.text = str(int(round(fval)))
+                            else:
+                                v_el.text = repr(fval)
                 if s_root.find(f"{{{MAIN_NS}}}drawing") is None:
                     dr_el = ET.Element(f"{{{MAIN_NS}}}drawing", {f"{{{R_NS}}}id": rel_id})
                     # Insert after pageSetup/headerFooter/pageMargins, before extLst/legacyDrawing

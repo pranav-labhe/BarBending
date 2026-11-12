@@ -1050,8 +1050,7 @@
 
       <div class="toolbar">
         <select id="uploadMode" title="Calculation Rule Engine">
-          <option value="sample_compat" selected>Sample-Compatible Rules</option>
-          <option value="strict_geometry">Strict Uniform Geometry</option>
+          <option value="strict_geometry" selected>Strict Uniform Geometry (No Roundoff)</option>
         </select>
         <label class="check-pill">
           <input type="checkbox" id="uploadRoundUp" /> Round Up Nos
@@ -1113,8 +1112,7 @@
         <div class="field">
           <label for="setMode">Rule Mode</label>
           <select id="setMode" class="const-input">
-            <option value="sample_compat">Sample-Compatible</option>
-            <option value="strict_geometry">Strict Geometry</option>
+            <option value="strict_geometry" selected>Strict Uniform Geometry</option>
           </select>
         </div>
         <div class="field">
@@ -1127,7 +1125,7 @@
       </div>
 
       <details class="const-drawer">
-        <summary>▸ All Sheet Constants ($P$3, $O$4, $Q$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
+        <summary>▸ All Sheet Constants ($P$3, $O$4, $Y$2, $S$3:$Y$4) — Editing updates UI &amp; Excel formulas live</summary>
         <div class="settings-bar">
           <div class="field">
             <label for="setLdVert">Vert. Ld ($Y$2 mm)</label>
@@ -1156,10 +1154,6 @@
           <div class="field">
             <label for="setSwOff">SW Inner Off ($O$4)</label>
             <input type="number" step="any" id="setSwOff" class="const-input" />
-          </div>
-          <div class="field">
-            <label for="setCompatHt">Compat Tie Ht ($Q$4)</label>
-            <input type="number" step="any" id="setCompatHt" class="const-input" />
           </div>
           <div class="field">
             <label for="setCf1Ht">CF1 SW Ht ($S$4 mm)</label>

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from app.formula_engine import resolve_row_formula
+from app.formula_engine import format_exact, resolve_row_formula
 from app.models import (
     DIAMETER_COLUMNS,
     BbsDocument,
@@ -451,6 +451,12 @@ def _build_cf1_or_cf2_rows(
                 param_ac=cf_count,
                 param_ae=f"Perimeter - 4*ColCover($U$2) + Hook($S$3/$U$3); Nos={ht_ref}/J",
                 inferred=True,
+                source_note=(
+                    f"Not printed in the PDF Schedule Table. Horizontal ties for {sw_label} "
+                    f"are derived from the CAD Plan shaft box ({format_exact(ib)}x{format_exact(il)} mm, perimeter=2*(B+L)) "
+                    f"and Shear Wall Height {format_exact(ht_val)} mm ({ht_ref}); stirrup size {format_exact(sw_tie_dia)}mm @ {format_exact(sw_tie_sp)} c/c. "
+                    f"Confirm against actual design / site sizes before export."
+                ),
             )
         )
         rows.append(
@@ -471,6 +477,11 @@ def _build_cf1_or_cf2_rows(
                 param_ac=cf_count,
                 param_ae="OuterTie - 4*SWInnerOff($O$4)",
                 inferred=True,
+                source_note=(
+                    f"Not printed in the PDF Schedule Table. Inner stirrup ring for {sw_label} "
+                    f"steps inward 4*SWInnerOff ({format_exact(settings.sw_inner_offset_mm)} mm in $O$4) from Outer Ties and matches Outer Nos. "
+                    f"Confirm against actual design / site sizes before export."
+                ),
             )
         )
     return rows
@@ -520,6 +531,12 @@ def _build_cf3_cf4_cf5_rows(
                     param_ad=2.0,
                     param_ae="Z=Depth; AA=DistWidth; AB=ManualOff(mm); AC=CFQty; AD=Layers(2)",
                     inferred=True,
+                    source_note=(
+                        f"Irregular polygon band dimensions for {mark} ({seg['label']}) are not tabulated in the PDF Schedule Table; "
+                        f"span {format_exact(span_v)} mm and distribution width {format_exact(dist_v)} mm are measured from CAD Plan geometry "
+                        f"(depth {format_exact(depth)} mm, Dia/Spacing from Schedule, {format_exact(cf_count)} No.). "
+                        f"Confirm against actual design / site sizes before export."
+                    ),
                 )
             )
         sb_dia = float(item.side_bars_dia or 10)
@@ -547,6 +564,11 @@ def _build_cf3_cf4_cf5_rows(
                 param_ac=cf_count,
                 param_ae="Perimeter linked to outer orthogonal spans + Hook($S$3/$U$3); AC=CFQty",
                 inferred=True,
+                source_note=(
+                    f"Single B x L box perimeter for {mark} SIDE BARS ({format_exact(sb_nos)} bars of {format_exact(sb_dia)}mm) is omitted from the PDF Schedule Table; "
+                    f"span is derived dynamically from Plan-measured orthogonal spans ({seg1_id} & {seg_orth_id}) less concrete cover ($S$2) plus hooks ($S$3/$U$3). "
+                    f"Confirm against actual design / site sizes before export."
+                ),
             )
         )
         return rows

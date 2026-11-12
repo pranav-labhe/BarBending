@@ -549,8 +549,9 @@
       color: var(--warn-ink);
       background: var(--warn-bg);
       border: 1px solid var(--warn-border);
-      padding: 4px 10px;
-      border-radius: 999px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      line-height: 1.35;
     }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn-border); flex-shrink: 0; }
 
@@ -619,15 +620,24 @@
     }
     .badge-inf {
       display: inline-block;
-      margin-top: 2px;
+      margin-top: 3px;
       background: var(--warn-chip);
       color: var(--warn-ink);
+      border: 1px solid var(--warn-border);
+      font-family: inherit;
       font-size: 10px;
       padding: 1px 6px;
       border-radius: 4px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: filter 0.1s ease;
+    }
+    .badge-inf:hover,
+    .badge-inf:focus-visible {
+      filter: brightness(0.94);
+      outline: none;
     }
     .shape-cell { min-width: 128px; text-align: center; }
     .shape-cell svg polyline,
@@ -747,6 +757,7 @@
       overflow-wrap: anywhere;
     }
     .fp-result { font-weight: 700; color: var(--export); }
+    .fp-warn { font-weight: 600; color: var(--warn-ink); background: var(--warn-bg); border-color: var(--warn-border); }
     .fp-meta { font-size: 11px; color: var(--muted); line-height: 1.4; }
     .hidden { display: none !important; }
 
@@ -803,7 +814,7 @@
       </div>
       <div class="step-chip">
         <span class="step-num">02</span>
-        <div><strong>Verify Highlighted Bars</strong><span>Inspect yellow inferred items side-by-side with PDF preview</span></div>
+        <div><strong>Confirm Unscheduled Bars</strong><span>Yellow rows weren't printed in the PDF Schedule — verify Plan/Section values against actual design sizes</span></div>
       </div>
       <div class="step-chip">
         <span class="step-num">03</span>
@@ -1003,7 +1014,7 @@
               <span>Download .xlsx (Formulas + Shapes)</span>
             </button>
           </div>
-          <span class="legend-note"><span class="legend-dot"></span>Yellow rows = inferred/derived from plan or sections — verify before export.</span>
+          <span class="legend-note"><span class="legend-dot"></span>Yellow = Not printed in PDF Schedule Table (measured from Plan geometry / Section heights; hover/tap "verify ⓘ" for source &amp; confirm against actual design / site sizes before export)</span>
         </div>
 
         <div class="table-wrap">
@@ -1297,31 +1308,32 @@ function buildFormulaDetails(idx, field) {
   if (row.param_ac !== null && row.param_ac !== undefined) paramParts.push(`AC${excelR}=${fmt(row.param_ac)}`);
   if (row.param_ad !== null && row.param_ad !== undefined) paramParts.push(`AD${excelR}=${fmt(row.param_ad)}`);
   const basisNote = [paramParts.join(" • "), row.param_ae].filter(Boolean).join(" | ");
+  const fullBasisNote = row.inferred && row.source_note ? [row.source_note, basisNote].filter(Boolean).join(" • ") : basisNote;
 
   const resolve = (expr) => resolveFormulaDisplay(expr, idx, currentDoc.rows, st, ftR);
 
   if (field === "span_mm") {
     const res = resolve(row.span_expr);
-    if (res) return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.span_mm)} mm`, basis: basisNote || "Live Excel cell formula" };
-    return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: `Static input (${fmt(row.span_mm)})`, calculation: `Direct CAD / edited input = ${fmt(row.span_mm)} mm`, basis: basisNote || "Direct input value" };
+    if (res) return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.span_mm)} mm`, basis: fullBasisNote || "Live Excel cell formula" };
+    return { title: `Span • ${baseHeader}`, cellTag: `Col D${excelR}`, excelFormula: `Static input (${fmt(row.span_mm)})`, calculation: `Direct CAD / edited input = ${fmt(row.span_mm)} mm`, basis: fullBasisNote || "Direct input value" };
   }
   if (field === "nos") {
     const res = resolve(row.nos_expr);
-    if (res) return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.nos)}`, basis: basisNote || "Live spacing / length distribution" };
-    return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: `Static input (${fmt(row.nos)})`, calculation: `From schedule / manual entry = ${fmt(row.nos)}`, basis: basisNote || "Direct bar count input" };
+    if (res) return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.nos)}`, basis: fullBasisNote || "Live spacing / length distribution" };
+    return { title: `Nos. per Member • ${baseHeader}`, cellTag: `Col K${excelR}`, excelFormula: `Static input (${fmt(row.nos)})`, calculation: `From schedule / manual entry = ${fmt(row.nos)}`, basis: fullBasisNote || "Direct bar count input" };
   }
   if (field === "multiple_no") {
     const res = resolve(row.multiple_expr);
-    if (res) return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.multiple_no)}`, basis: basisNote || "Product of Qty × Layers" };
-    return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: `Static input (${fmt(row.multiple_no)})`, calculation: `Direct multiplier = ${fmt(row.multiple_no)}`, basis: basisNote || "Direct multiplier entry" };
+    if (res) return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.multiple_no)}`, basis: fullBasisNote || "Product of Qty × Layers" };
+    return { title: `Multiple No. • ${baseHeader}`, cellTag: `Col L${excelR}`, excelFormula: `Static input (${fmt(row.multiple_no)})`, calculation: `Direct multiplier = ${fmt(row.multiple_no)}`, basis: fullBasisNote || "Direct multiplier entry" };
   }
   if (field === "total_nos") {
     return { title: `Total Nos • ${baseHeader}`, cellTag: `Col M${excelR}`, excelFormula: `=+L${excelR}*K${excelR}`, calculation: `${fmt(row.multiple_no)} × ${fmt(row.nos)} = ${fmt(row.total_nos)}`, basis: `L${excelR} (Mult) × K${excelR} (Nos)` };
   }
   if (field === "cut_length_mm") {
     const res = resolve(row.cut_length_expr);
-    if (res) return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.cut_length_mm)} mm`, basis: basisNote || "Live cut-length cell formula" };
-    return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: `Static input (${fmt(row.cut_length_mm)})`, calculation: `Direct manual value = ${fmt(row.cut_length_mm)} mm`, basis: basisNote || "Manual cut length input" };
+    if (res) return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: res.excelFormula, calculation: `${res.displayExpr} = ${fmt(row.cut_length_mm)} mm`, basis: fullBasisNote || "Live cut-length cell formula" };
+    return { title: `Cut Length • ${baseHeader}`, cellTag: `Col N${excelR}`, excelFormula: `Static input (${fmt(row.cut_length_mm)})`, calculation: `Direct manual value = ${fmt(row.cut_length_mm)} mm`, basis: fullBasisNote || "Manual cut length input" };
   }
   if (field === "weight_kg") {
     const dIdx = DIAMETER_COLUMNS.indexOf(Math.round(Number(row.dia_mm)));
@@ -1358,6 +1370,23 @@ function buildKpiGrandDetails() {
   };
 }
 
+function buildVerifyDetails(idx) {
+  if (!currentDoc || !currentDoc.rows[idx]) return null;
+  const row = currentDoc.rows[idx];
+  const excelR = 8 + idx;
+  const baseHeader = `${row.bar_mark || row.group_key || "Row"} — ${row.description}`;
+  return {
+    title: `Verify Unscheduled Row • ${baseHeader}`,
+    cellTag: `Row ${excelR} (Yellow)`,
+    isVerify: true,
+    codeLabel1: "Why Highlighted (Not in PDF Schedule Table)",
+    excelFormula: row.source_note || "Dimension/count was not explicitly printed in the PDF Schedule Table; derived from Plan geometry / Section heights or Sheet Constants.",
+    codeLabel2: "Action Required Before Export",
+    calculation: "PDF Schedule omits these numbers — confirm Span (D), Nos (K), Mult (L), and Cut Length (N) against actual structural design / site sizes before approval.",
+    basis: `Highlighted Excel cells: D${excelR}, K${excelR}, L${excelR}, N${excelR}${row.param_ae ? " • " + row.param_ae : ""}`,
+  };
+}
+
 function positionPopover(anchorEl) {
   const pop = $("formulaPopover");
   const rect = anchorEl.getBoundingClientRect();
@@ -1385,12 +1414,12 @@ function showFormulaPopover(anchorEl, details, pin = false) {
       <span class="fp-cell-tag">${escapeHtml(details.cellTag)}</span>
     </div>
     <div class="fp-row">
-      <span class="fp-lbl">Excel Formula</span>
+      <span class="fp-lbl">${escapeHtml(details.codeLabel1 || "Excel Formula")}</span>
       <code class="fp-code">${escapeHtml(details.excelFormula)}</code>
     </div>
     <div class="fp-row">
-      <span class="fp-lbl">Exact Calculation (Unrounded)</span>
-      <code class="fp-code fp-result">${escapeHtml(details.calculation)}</code>
+      <span class="fp-lbl">${escapeHtml(details.codeLabel2 || "Exact Calculation (Unrounded)")}</span>
+      <code class="fp-code ${details.isVerify ? "fp-warn" : "fp-result"}">${escapeHtml(details.calculation)}</code>
     </div>
     <div class="fp-row"><span class="fp-meta">${escapeHtml(details.basis || "")}</span></div>
   `;
@@ -1531,7 +1560,7 @@ function renderDocument(doc, previewUrl) {
     tr.innerHTML = `
       <td class="mono" style="text-align:center;font-weight:700;">${row.sr_no ?? ""}</td>
       <td><input type="text" data-idx="${idx}" data-field="bar_mark" value="${escapeHtml(row.bar_mark)}" style="min-width:115px"/></td>
-      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:160px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ""}</td>
+      <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:160px;font-weight:600"/>${row.inferred ? `<button type="button" class="badge-inf" data-verify-idx="${idx}" title="Not in PDF Schedule Table — hover or tap to inspect source &amp; verification notes">verify &#9432;</button>` : ""}</td>
       <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="span_mm" value="${fmt(row.span_mm)}" style="width:94px"/>${fxButtonHtml(idx, "span_mm", Boolean(row.span_expr))}</div></td>
       <td class="num"><input type="number" step="any" data-idx="${idx}" data-field="dia_mm" value="${fmt(row.dia_mm)}" style="width:54px"/></td>
       <td class="shape-cell">${renderShapeSvg(row.shape)}</td>
@@ -1706,30 +1735,31 @@ function buildBlankStarterDoc() {
   };
 }
 
-document.addEventListener("pointerover", (e) => {
-  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
-  if (!btn || popoverPinned) return;
-  const details = btn.dataset.fxKpi === "grand"
+function resolvePopoverDetails(btn) {
+  if (btn.dataset.verifyIdx !== undefined) return buildVerifyDetails(Number(btn.dataset.verifyIdx));
+  return btn.dataset.fxKpi === "grand"
     ? buildKpiGrandDetails()
     : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
-  showFormulaPopover(btn, details, false);
+}
+
+document.addEventListener("pointerover", (e) => {
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
+  if (!btn || popoverPinned) return;
+  showFormulaPopover(btn, resolvePopoverDetails(btn), false);
 });
 
 document.addEventListener("pointerout", (e) => {
-  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
   if (!btn || popoverPinned) return;
   popoverTimer = setTimeout(() => hideFormulaPopover(false), 90);
 });
 
 document.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+  const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
   if (btn) {
     e.preventDefault();
     e.stopPropagation();
-    const details = btn.dataset.fxKpi === "grand"
-      ? buildKpiGrandDetails()
-      : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
-    showFormulaPopover(btn, details, true);
+    showFormulaPopover(btn, resolvePopoverDetails(btn), true);
     return;
   }
   if (!e.target.closest("#formulaPopover")) {

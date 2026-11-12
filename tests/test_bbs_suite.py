@@ -363,4 +363,91 @@ def test_local_client_sample_validation() -> None:
     assert ws_v[f"N{by_id['CF4_long'][0]}"].value == pytest.approx(2 * (750 - 100) + (6000 - 100) - 24, abs=1e-9)
     # (e) Sample Spacers (10mm) was hardcoded in 12mm column R77 instead of 10mm Q
     assert ws_sv["E77"].value == 10 and ws_sv["R77"].value == 200
+    assert all(r.source_note for r in doc.rows if r.inferred)
+    legend_r = grand_r + 2
+    assert "YELLOW HIGHLIGHT LEGEND:" in str(ws_v[f"A{legend_r}"].value)
+    assert ws_v[f"A{legend_r}"].fill.start_color.rgb.endswith("FFF9DB")
+
+
+def test_inferred_rows_source_notes_and_xlsx_legend() -> None:
+    """Ensure inferred rows carry dynamic source notes (without fake PDF schedule refs) and .xlsx exports a yellow legend."""
+    schedule = [
+        ScheduleFootRow(
+            mark="CF1",
+            kind="combined_footing",
+            footing_b_mm=4200,
+            footing_l_mm=5600,
+            depth_mm=700,
+            long_lower_dia=16,
+            long_lower_spacing=125,
+            short_upper_dia=12,
+            short_upper_spacing=150,
+            side_bars_nos=2,
+            side_bars_dia=10,
+            combined_count=1,
+            shaft_inner_b_mm=1300,
+            shaft_inner_l_mm=3800,
+        ),
+        ScheduleFootRow(
+            mark="SW1",
+            kind="shear_wall",
+            vert_nos=4,
+            vert_dia=12,
+            ties_dia=8,
+            ties_spacing=150,
+        ),
+        ScheduleFootRow(
+            mark="CF3",
+            kind="combined_footing",
+            depth_mm=650,
+            long_lower_dia=12,
+            long_lower_spacing=125,
+            side_bars_nos=3,
+            side_bars_dia=10,
+            combined_count=1,
+            l_shape_segments=[
+                {"label": "CF3 LONG SPAN", "span": 6400, "dist": 2100},
+                {"label": "CF3 WING SPAN", "span": 3200, "dist": 1800},
+                {"label": "CF3 ORTH SPAN", "span": 4100, "dist": 1950},
+            ],
+        ),
+    ]
+    doc = build_bbs_document(
+        meta={"project_name": "TEST TOWER", "drawing_no": "DRG-01"},
+        schedule=schedule,
+        settings=CalcSettings(shear_wall_ht_cf1_mm=2900.0, sw_inner_offset_mm=145.0),
+        warnings=[],
+        parse_stats={},
+        date_str="2026-11-12",
+    )
+    inferred_rows = [r for r in doc.rows if r.inferred]
+    assert len(inferred_rows) == 6  # CF1 tie_outer/tie_inner + 3 CF3 segs + CF3 side
+    for r in inferred_rows:
+        assert r.source_note
+        low = r.source_note.lower()
+        assert "not" in low or "omitted" in low
+        assert "actual design / site sizes" in low
+
+    tie_outer = next(r for r in inferred_rows if r.id == "CF1_tie_outer")
+    tie_inner = next(r for r in inferred_rows if r.id == "CF1_tie_inner")
+    seg_1 = next(r for r in inferred_rows if r.id == "CF3_seg_1")
+    assert "1300x3800 mm" in tie_outer.source_note
+    assert "2900 mm" in tie_outer.source_note
+    assert "145 mm" in tie_inner.source_note
+    assert "6400 mm" in seg_1.source_note and "2100 mm" in seg_1.source_note
+
+    xlsx_bytes = export_bbs_xlsx(doc)
+    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), data_only=False)
+    ws = wb["FORMAT"]
+    legend_r = 8 + len(doc.rows) + 5
+    assert "YELLOW HIGHLIGHT LEGEND:" in str(ws[f"A{legend_r}"].value)
+    assert "actual structural design / site sizes" in str(ws[f"A{legend_r}"].value)
+    assert ws[f"A{legend_r}"].fill.start_color.rgb.endswith("FFF9DB")
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes), "r") as z:
+        sroot = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
+        ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        leg_cells = sroot.findall(f".//s:row[@r='{legend_r}']/s:c", ns)
+        assert len(leg_cells) == 25 and all(c.get("s") for c in leg_cells)
+    assert any(str(rng) == f"A{legend_r}:Y{legend_r}" for rng in ws.merged_cells.ranges)
+    assert f"$Y${legend_r}" in str(ws.print_area)
 

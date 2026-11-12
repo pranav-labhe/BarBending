@@ -723,8 +723,9 @@
       color: var(--warn-ink);
       background: var(--warn-bg);
       border: 1px solid var(--warn-border);
-      padding: 4px 10px;
-      border-radius: 999px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+      line-height: 1.35;
     }
     .legend-dot {
       width: 8px;
@@ -800,15 +801,24 @@
     }
     .badge-inf {
       display: inline-block;
-      margin-top: 2px;
+      margin-top: 3px;
       background: var(--warn-chip);
       color: var(--warn-ink);
+      border: 1px solid var(--warn-border);
+      font-family: inherit;
       font-size: 10px;
       padding: 1px 6px;
       border-radius: 4px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: filter 0.1s ease;
+    }
+    .badge-inf:hover,
+    .badge-inf:focus-visible {
+      filter: brightness(0.94);
+      outline: none;
     }
     .shape-cell { min-width: 128px; text-align: center; }
     .shape-cell svg polyline,
@@ -952,6 +962,12 @@
       font-weight: 700;
       color: var(--export);
     }
+    .fp-warn {
+      font-weight: 600;
+      color: var(--warn-ink);
+      background: var(--warn-bg);
+      border-color: var(--warn-border);
+    }
     .fp-meta {
       font-size: 11px;
       color: var(--muted);
@@ -1022,7 +1038,7 @@
       </div>
       <div class="step-chip">
         <span class="step-num">02</span>
-        <div><strong>Verify Highlighted Bars</strong><span>Inspect yellow inferred items side-by-side with PDF preview</span></div>
+        <div><strong>Confirm Unscheduled Bars</strong><span>Yellow rows weren't printed in the PDF Schedule — verify Plan/Section values against actual design sizes</span></div>
       </div>
       <div class="step-chip">
         <span class="step-num">03</span>
@@ -1229,7 +1245,7 @@
               <span>Download .xlsx</span>
             </button>
           </div>
-          <span class="legend-note"><span class="legend-dot"></span>Yellow = inferred from plan/sections</span>
+          <span class="legend-note"><span class="legend-dot"></span>Yellow = Not printed in PDF Schedule Table (measured from Plan geometry / Section heights; hover/tap "verify ⓘ" for source &amp; confirm against actual design / site sizes before export)</span>
         </div>
 
         <div class="table-wrap">

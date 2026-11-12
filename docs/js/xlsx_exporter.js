@@ -60,12 +60,13 @@
     // 19: Param Header Z..AE (11pt bold slate, #F1F5F9 fill, wrap, header border)
     // 20: Param Value Z..AD (11pt slate, center, General, thin border)
     // 21: Param Basis AE (11pt slate, left, thin border)
+    // 22: Yellow Legend Banner (11pt bold amber, #FFF9DB fill, thin border, left wrap)
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <numFmts count="1">
     <numFmt numFmtId="166" formatCode="yyyy\\-mm\\-dd"/>
   </numFmts>
-  <fonts count="10">
+  <fonts count="11">
     <font><sz val="11"/><color theme="1"/><name val="Calibri"/></font>
     <font><b/><sz val="24"/><name val="Calibri Light"/></font>
     <font><b/><sz val="18"/><name val="Calibri Light"/></font>
@@ -76,6 +77,7 @@
     <font><b/><sz val="11"/><color rgb="FF1E3A8A"/><name val="Calibri"/></font>
     <font><b/><sz val="13"/><color rgb="FF0F172A"/><name val="Calibri"/></font>
     <font><sz val="11"/><color rgb="FF334155"/><name val="Calibri"/></font>
+    <font><b/><sz val="11"/><color rgb="FF854D0E"/><name val="Calibri"/></font>
   </fonts>
   <fills count="9">
     <fill><patternFill patternType="none"/></fill>
@@ -104,7 +106,7 @@
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="22">
+  <cellXfs count="23">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
@@ -127,6 +129,7 @@
     <xf numFmtId="0" fontId="7" fillId="8" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="9" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
     <xf numFmtId="0" fontId="9" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="10" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -312,6 +315,7 @@
     const lblRow = sumRow + 1;
     const grandRow = lblRow + 1;
     const noteRow = grandRow + 1;
+    const legendRow = noteRow + 1;
 
     function makeRow(rIdx, ht, cellsXml) {
       return `<row r="${rIdx}" ht="${ht}" customHeight="1">${cellsXml.join("")}</row>`;
@@ -534,6 +538,7 @@
     merges.push(`A${grandRow}:O${grandRow}`);
     merges.push(`P${grandRow}:X${grandRow}`);
     merges.push(`A${noteRow}:Y${noteRow}`);
+    merges.push(`A${legendRow}:Y${legendRow}`);
 
     // Sum row
     {
@@ -582,6 +587,17 @@
       rowsXml.push(makeRow(noteRow, 28.0, cs));
     }
 
+    // Yellow highlight legend row
+    {
+      const legendText =
+        "YELLOW HIGHLIGHT LEGEND: Shaded cells (D, K, L, N) were NOT printed in the PDF Schedule Table — " +
+        "values were derived from CAD Plan geometry / Section heights or Sheet Constants (Cols O..AD). " +
+        "Confirm against actual structural design / site sizes before approval.";
+      const cs = [cellStr(`A${legendRow}`, legendText, 22)];
+      for (let c = 2; c <= 25; c++) cs.push(cellStr(`${colLetter(c)}${legendRow}`, "", 22));
+      rowsXml.push(makeRow(legendRow, 30.0, cs));
+    }
+
     const colsXml = Object.entries(COL_WIDTHS)
       .map(([idx, w]) => `<col min="${idx}" max="${idx}" width="${w}" customWidth="1"/>`)
       .join("");
@@ -618,7 +634,7 @@
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <workbookPr/>
   <sheets><sheet name="FORMAT" sheetId="1" r:id="rId1"/></sheets>
-  <definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">FORMAT!$A$1:$Y$${noteRow}</definedName></definedNames>
+  <definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">FORMAT!$A$1:$Y$${legendRow}</definedName></definedNames>
   <calcPr calcId="191029" fullCalcOnLoad="1"/>
 </workbook>`;
 

@@ -201,6 +201,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     lbl_row = sum_row + 1
     grand_row = sum_row + 2
     note_row = sum_row + 3
+    legend_row = sum_row + 4
 
     total_kg_exact = format_exact(recalc.total_weight_mt * float(recalc.settings.scale_divisor or 1000.0))
     cached_values["P5"] = (f"Total WT. IN KG. ({total_kg_exact})", True)
@@ -417,6 +418,7 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     ws.row_dimensions[lbl_row].height = 36.0
     ws.row_dimensions[grand_row].height = 39.0
     ws.row_dimensions[note_row].height = 28.0
+    ws.row_dimensions[legend_row].height = 30.0
 
     ws.merge_cells(start_row=sum_row, start_column=1, end_row=sum_row, end_column=3)
     ws.cell(sum_row, 1, "Total Weight (MT)")
@@ -457,8 +459,23 @@ def export_bbs_xlsx(doc: BbsDocument) -> bytes:
     note_cell.font = Font(name="Calibri", size=11, bold=True, color="C00000")
     note_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
+    # Yellow highlight legend row
+    ws.merge_cells(start_row=legend_row, start_column=1, end_row=legend_row, end_column=25)
+    legend_text = (
+        "YELLOW HIGHLIGHT LEGEND: Shaded cells (D, K, L, N) were NOT printed in the PDF Schedule Table — "
+        "values were derived from CAD Plan geometry / Section heights or Sheet Constants (Cols O..AD). "
+        "Confirm against actual structural design / site sizes before approval."
+    )
+    leg_cell = ws.cell(legend_row, 1, legend_text)
+    leg_cell.font = Font(name="Calibri", size=11, bold=True, color="854D0E")
+    leg_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    for c in range(1, 26):
+        c_leg = ws.cell(legend_row, c)
+        c_leg.fill = INFERRED_FILL
+        c_leg.border = CELL_BORDER
+
     # Print setup (Landscape A3 fit 1 page wide across A..Y printable columns)
-    ws.print_area = f"A1:Y{note_row}"
+    ws.print_area = f"A1:Y{legend_row}"
     ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
     ws.page_setup.paperSize = ws.PAPERSIZE_A3
     ws.sheet_properties.pageSetUpPr.fitToPage = True

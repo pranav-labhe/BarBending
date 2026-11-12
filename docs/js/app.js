@@ -221,6 +221,7 @@
     if (row.param_ac !== null && row.param_ac !== undefined) paramParts.push(`AC${excelR}=${fmt(row.param_ac)}`);
     if (row.param_ad !== null && row.param_ad !== undefined) paramParts.push(`AD${excelR}=${fmt(row.param_ad)}`);
     const basisNote = [paramParts.join(" • "), row.param_ae].filter(Boolean).join(" | ");
+    const fullBasisNote = row.inferred && row.source_note ? [row.source_note, basisNote].filter(Boolean).join(" • ") : basisNote;
 
     const resolve = (expr) =>
       BbsCalculator.resolveRowFormula(expr, idx, currentDoc.rows, st, ftR);
@@ -233,7 +234,7 @@
           cellTag: `Col D${excelR}`,
           excelFormula: res.excelFormula,
           calculation: `${res.displayExpr} = ${fmt(row.span_mm)} mm`,
-          basis: basisNote || "Live Excel cell formula",
+          basis: fullBasisNote || "Live Excel cell formula",
         };
       }
       return {
@@ -241,7 +242,7 @@
         cellTag: `Col D${excelR}`,
         excelFormula: `Static input (${fmt(row.span_mm)})`,
         calculation: `Direct CAD / edited input = ${fmt(row.span_mm)} mm`,
-        basis: basisNote || "Direct input value",
+        basis: fullBasisNote || "Direct input value",
       };
     }
 
@@ -253,7 +254,7 @@
           cellTag: `Col K${excelR}`,
           excelFormula: res.excelFormula,
           calculation: `${res.displayExpr} = ${fmt(row.nos)}`,
-          basis: basisNote || "Live spacing / length distribution",
+          basis: fullBasisNote || "Live spacing / length distribution",
         };
       }
       return {
@@ -261,7 +262,7 @@
         cellTag: `Col K${excelR}`,
         excelFormula: `Static input (${fmt(row.nos)})`,
         calculation: `From schedule / manual entry = ${fmt(row.nos)}`,
-        basis: basisNote || "Direct bar count input",
+        basis: fullBasisNote || "Direct bar count input",
       };
     }
 
@@ -273,7 +274,7 @@
           cellTag: `Col L${excelR}`,
           excelFormula: res.excelFormula,
           calculation: `${res.displayExpr} = ${fmt(row.multiple_no)}`,
-          basis: basisNote || "Product of Qty × Layers",
+          basis: fullBasisNote || "Product of Qty × Layers",
         };
       }
       return {
@@ -281,7 +282,7 @@
         cellTag: `Col L${excelR}`,
         excelFormula: `Static input (${fmt(row.multiple_no)})`,
         calculation: `Direct multiplier = ${fmt(row.multiple_no)}`,
-        basis: basisNote || "Direct multiplier entry",
+        basis: fullBasisNote || "Direct multiplier entry",
       };
     }
 
@@ -303,7 +304,7 @@
           cellTag: `Col N${excelR}`,
           excelFormula: res.excelFormula,
           calculation: `${res.displayExpr} = ${fmt(row.cut_length_mm)} mm`,
-          basis: basisNote || "Live cut-length cell formula",
+          basis: fullBasisNote || "Live cut-length cell formula",
         };
       }
       return {
@@ -311,7 +312,7 @@
         cellTag: `Col N${excelR}`,
         excelFormula: `Static input (${fmt(row.cut_length_mm)})`,
         calculation: `Direct manual value = ${fmt(row.cut_length_mm)} mm`,
-        basis: basisNote || "Manual cut length input",
+        basis: fullBasisNote || "Manual cut length input",
       };
     }
 
@@ -350,6 +351,23 @@
     };
   }
 
+  function buildVerifyDetails(idx) {
+    if (!currentDoc || !currentDoc.rows[idx]) return null;
+    const row = currentDoc.rows[idx];
+    const excelR = 8 + idx;
+    const baseHeader = `${row.bar_mark || row.group_key || "Row"} — ${row.description}`;
+    return {
+      title: `Verify Unscheduled Row • ${baseHeader}`,
+      cellTag: `Row ${excelR} (Yellow)`,
+      isVerify: true,
+      codeLabel1: "Why Highlighted (Not in PDF Schedule Table)",
+      excelFormula: row.source_note || "Dimension/count was not explicitly printed in the PDF Schedule Table; derived from Plan geometry / Section heights or Sheet Constants.",
+      codeLabel2: "Action Required Before Export",
+      calculation: "PDF Schedule omits these numbers — confirm Span (D), Nos (K), Mult (L), and Cut Length (N) against actual structural design / site sizes before approval.",
+      basis: `Highlighted Excel cells: D${excelR}, K${excelR}, L${excelR}, N${excelR}${row.param_ae ? " • " + row.param_ae : ""}`,
+    };
+  }
+
   function positionPopover(anchorEl) {
     const pop = $("formulaPopover");
     const rect = anchorEl.getBoundingClientRect();
@@ -379,12 +397,12 @@
         <span class="fp-cell-tag">${escapeHtml(details.cellTag)}</span>
       </div>
       <div class="fp-row">
-        <span class="fp-lbl">Excel Formula</span>
+        <span class="fp-lbl">${escapeHtml(details.codeLabel1 || "Excel Formula")}</span>
         <code class="fp-code">${escapeHtml(details.excelFormula)}</code>
       </div>
       <div class="fp-row">
-        <span class="fp-lbl">Exact Calculation (Unrounded)</span>
-        <code class="fp-code fp-result">${escapeHtml(details.calculation)}</code>
+        <span class="fp-lbl">${escapeHtml(details.codeLabel2 || "Exact Calculation (Unrounded)")}</span>
+        <code class="fp-code ${details.isVerify ? "fp-warn" : "fp-result"}">${escapeHtml(details.calculation)}</code>
       </div>
       <div class="fp-row">
         <span class="fp-meta">${escapeHtml(details.basis || "")}</span>
@@ -521,7 +539,7 @@
       tr.innerHTML = `
         <td class="mono" style="text-align:center;font-weight:700;">${row.sr_no ?? ""}</td>
         <td><input type="text" data-idx="${idx}" data-field="bar_mark" value="${escapeHtml(row.bar_mark)}" style="min-width:115px"/></td>
-        <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:160px;font-weight:600"/>${row.inferred ? '<span class="badge-inf">verify</span>' : ""}</td>
+        <td><input type="text" data-idx="${idx}" data-field="description" value="${escapeHtml(row.description)}" style="min-width:160px;font-weight:600"/>${row.inferred ? `<button type="button" class="badge-inf" data-verify-idx="${idx}" title="Not in PDF Schedule Table — hover or tap to inspect source &amp; verification notes">verify &#9432;</button>` : ""}</td>
         <td class="num"><div class="cell-fx"><input type="number" step="any" data-idx="${idx}" data-field="span_mm" value="${fmt(row.span_mm)}" style="width:94px"/>${fxButtonHtml(idx, "span_mm", Boolean(row.span_expr))}</div></td>
         <td class="num"><input type="number" step="any" data-idx="${idx}" data-field="dia_mm" value="${fmt(row.dia_mm)}" style="width:54px"/></td>
         <td class="shape-cell">${renderShapeSvg(row.shape)}</td>
@@ -736,31 +754,32 @@
     }
   }
 
-  // Event delegation for desktop hover & mobile tap on Formula Inspector fx badges
-  document.addEventListener("pointerover", (e) => {
-    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
-    if (!btn || popoverPinned) return;
-    const details = btn.dataset.fxKpi === "grand"
+  // Event delegation for desktop hover & mobile tap on Formula Inspector (fx) and Verify badges
+  function resolvePopoverDetails(btn) {
+    if (btn.dataset.verifyIdx !== undefined) return buildVerifyDetails(Number(btn.dataset.verifyIdx));
+    return btn.dataset.fxKpi === "grand"
       ? buildKpiGrandDetails()
       : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
-    showFormulaPopover(btn, details, false);
+  }
+
+  document.addEventListener("pointerover", (e) => {
+    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
+    if (!btn || popoverPinned) return;
+    showFormulaPopover(btn, resolvePopoverDetails(btn), false);
   });
 
   document.addEventListener("pointerout", (e) => {
-    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
     if (!btn || popoverPinned) return;
     popoverTimer = setTimeout(() => hideFormulaPopover(false), 90);
   });
 
   document.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi]");
+    const btn = e.target.closest("[data-fx-idx], [data-fx-kpi], [data-verify-idx]");
     if (btn) {
       e.preventDefault();
       e.stopPropagation();
-      const details = btn.dataset.fxKpi === "grand"
-        ? buildKpiGrandDetails()
-        : buildFormulaDetails(Number(btn.dataset.fxIdx), btn.dataset.fxField);
-      showFormulaPopover(btn, details, true);
+      showFormulaPopover(btn, resolvePopoverDetails(btn), true);
       return;
     }
     if (!e.target.closest("#formulaPopover")) {

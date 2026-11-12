@@ -776,7 +776,11 @@
         param_ae: `Perimeter - 4*ColCover($U$2) + Hook($S$3/$U$3); Nos=${htRef}/J`,
         remark: "",
         inferred: true,
-        source_note: "",
+        source_note:
+          `Not printed in the PDF Schedule Table. Horizontal ties for ${swLabel} ` +
+          `are derived from the CAD Plan shaft box (${formatExact(ib)}x${formatExact(il)} mm, perimeter=2*(B+L)) ` +
+          `and Shear Wall Height ${formatExact(htVal)} mm (${htRef}); stirrup size ${formatExact(swTieDia)}mm @ ${formatExact(swTieSp)} c/c. ` +
+          `Confirm against actual design / site sizes before export.`,
       });
       rows.push({
         id: `${mark}_tie_inner`,
@@ -806,7 +810,10 @@
         param_ae: "OuterTie - 4*SWInnerOff($O$4)",
         remark: "",
         inferred: true,
-        source_note: "",
+        source_note:
+          `Not printed in the PDF Schedule Table. Inner stirrup ring for ${swLabel} ` +
+          `steps inward 4*SWInnerOff (${formatExact(settings.sw_inner_offset_mm)} mm in $O$4) from Outer Ties and matches Outer Nos. ` +
+          `Confirm against actual design / site sizes before export.`,
       });
     }
     return rows;
@@ -860,12 +867,18 @@
           param_ae: "Z=Depth; AA=DistWidth; AB=ManualOff(mm); AC=CFQty; AD=Layers(2)",
           remark: "",
           inferred: true,
-          source_note: "",
+          source_note:
+            `Irregular polygon band dimensions for ${mark} (${seg.label}) are not tabulated in the PDF Schedule Table; ` +
+            `span ${formatExact(spanV)} mm and distribution width ${formatExact(distV)} mm are measured from CAD Plan geometry ` +
+            `(depth ${formatExact(depth)} mm, Dia/Spacing from Schedule, ${formatExact(cfCount)} No.). ` +
+            `Confirm against actual design / site sizes before export.`,
         });
       });
 
       const seg1Id = `${mark}_seg_1`;
       const segOrthId = `${mark}_seg_${segs.length >= 3 ? 3 : Math.min(2, segs.length)}`;
+      const sbDia = Number(item.side_bars_dia || 10);
+      const sbNos = Number(item.side_bars_nos || 3);
       rows.push({
         id: `${mark}_side`,
         sr_no: null,
@@ -874,11 +887,11 @@
         description: "SIDE BARS",
         span_expr: `=2*(@ID:${seg1Id}:D-2*$S$2)+2*(@ID:${segOrthId}:D-2*$S$2)+2*MAX($S$3*@SELF:E,$U$3)-(4*@ID:${seg1Id}:E)+@SELF:AB`,
         span_mm: 0,
-        dia_mm: Number(item.side_bars_dia || 10),
+        dia_mm: sbDia,
         shape: { kind: "straight", labels: { text: "Along Perimeter" } },
         spacing_mm: null,
         nos_expr: null,
-        nos: Number(item.side_bars_nos || 3),
+        nos: sbNos,
         multiple_expr: "=@SELF:AC",
         multiple_no: cfCount,
         total_nos: 0,
@@ -894,7 +907,10 @@
         param_ae: "Perimeter linked to outer orthogonal spans + Hook($S$3/$U$3); AC=CFQty",
         remark: "",
         inferred: true,
-        source_note: "",
+        source_note:
+          `Single B x L box perimeter for ${mark} SIDE BARS (${formatExact(sbNos)} bars of ${formatExact(sbDia)}mm) is omitted from the PDF Schedule Table; ` +
+          `span is derived dynamically from Plan-measured orthogonal spans (${seg1Id} & ${segOrthId}) less concrete cover ($S$2) plus hooks ($S$3/$U$3). ` +
+          `Confirm against actual design / site sizes before export.`,
       });
       return rows;
     }
